@@ -1,0 +1,56 @@
+import hashlib
+import secrets
+from datetime import timezone
+
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+
+hasher = PasswordHasher()
+ALL_PERMISSIONS = [
+    "workspace.view", "stores.view", "stores.manage", "stores.export", "users.manage", "audit.view",
+    "jobs.view", "jobs.run", "files.view", "files.upload", "notifications.view", "approvals.view",
+    "costs.view", "finance.view",
+]
+BASIC = ["workspace.view", "stores.view", "jobs.view", "jobs.run", "files.view", "files.upload", "notifications.view", "approvals.view"]
+ROLES = {
+    "admin": {"label": "管理员", "permissions": ALL_PERMISSIONS},
+    "manager": {"label": "经理", "permissions": BASIC + ["stores.export", "audit.view", "costs.view", "finance.view"]},
+    "operator": {"label": "运营", "permissions": BASIC + ["stores.export"]},
+    "finance": {"label": "财务", "permissions": BASIC + ["stores.export", "audit.view", "costs.view", "finance.view"]},
+    "warehouse": {"label": "仓库", "permissions": BASIC},
+}
+
+
+def permissions(user) -> list[str]:
+    return ROLES.get(user.role, {}).get("permissions", [])
+
+
+def has_permission(user, permission: str) -> bool:
+    return user.is_active and permission in permissions(user)
+
+
+def digest(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_password(password: str) -> str:
+    return hasher.hash(password)
+
+
+def verify_password(password_hash: str, password: str) -> bool:
+    try:
+        return hasher.verify(password_hash, password)
+    except (VerificationError, VerifyMismatchError, InvalidHashError):
+        return False
+
+
+def aware(value):
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def can_access_store(user, store_id: str) -> bool:
+    return user.role == "admin" or store_id in {store.id for store in user.stores}

@@ -1,36 +1,46 @@
-# SJLERP
+# 书剑录 ERP · SJLERP
 
-SJLERP 是一个简易的亚马逊订单与广告数据分析工具。
+SJLERP（书剑录 ERP）是面向美国站亚马逊多店铺业务的内部 Web 管理系统，以 FBA 业务为主，规划统一管理店铺、商品、销售、广告、利润、库存、采购与物流。
 
-当前阶段先确定工具框架和技术选型，输入包括：
+首批 M1 基础功能已可运行：账号权限、店铺、附件、后台任务、通知和审计。前后端已连接真实数据库与队列并通过本地集成验证；主体档案、业务敏感字段和经营日期筛选将随后续业务模块补齐。完整业务范围见 [ERP 功能规划](docs/erp-product-plan.md)，任务进度见 [开发执行计划](docs/development-plan.md)，本轮结果见 [实施记录](docs/implementation-log.md)。
 
-- 亚马逊后台 Fulfilment / All Orders 导出的订单数据文件
-- 亚马逊广告后台导出的广告报告 Excel 文件
+## 本地运行
 
-目标输出是单品利润情况。具体利润算法、成本口径、广告归因规则、退款处理规则等，后续再单独确定。
+完整步骤见 [本地开发与启动](docs/local-development.md)。已准备好本地依赖时，在项目目录运行：
 
-## 推荐技术栈
+```bash
+.venv/bin/python scripts/dev.py infra-up
+.venv/bin/python scripts/dev.py migrate
+.venv/bin/python scripts/dev.py run
+```
 
-- 运行环境：Python 3.12+
-- 应用界面：Streamlit
-- 数据处理：pandas + openpyxl
-- 数据校验：pandera
-- 图表展示：Plotly
-- 配置管理：YAML + pydantic-settings
-- 自动化测试：pytest
-- 依赖管理：uv
+Web 地址为 `http://127.0.0.1:5173`。首次安装需按启动文档创建管理员，系统不提供固定通用密码。订单、广告导入及采购财务等业务模块仍在后续里程碑内。
 
-这套方案适合先做成本较低、迭代快的本地分析工具；后续如果需要多人使用、历史数据沉淀或定时任务，也可以平滑升级到 FastAPI + React + 数据库。
+## 已确认建设范围
 
-## 计划流程
+- 原一期、二期功能均纳入本轮建设：经营分析、利润财务、库存补货、采购、仓库及头程入仓。
+- 店铺订单和广告由人员从亚马逊导出文件，再手动导入 ERP；自动接口同步留待后续。
+- 库存、交易、结算及费用数据建议同样采用报表导入，内部采购、收发货、物流和付款在 ERP 登记。
+- 开发可按依赖分批推进，本轮最终交付包含上述完整业务流程。
 
-1. 上传或选择订单数据文件和广告数据文件。
-2. 分别解析两个来源文件，转换成统一的中间表。
-3. 校验必需字段、日期范围、金额格式、SKU / ASIN 等关键字段。
-4. 按 SKU / ASIN / 日期关联订单、广告和成本数据。
-5. 执行利润计算策略。
-6. 输出单品利润结果 Excel，并在界面中展示预览和图表。
+## 开发顺序
+
+1. M1：工程基础与账号权限。
+2. M2：业务基础档案与期初数据。
+3. M3：数据导入中心及报表适配。
+4. M4：销售、广告与预估经营分析。
+5. M5：采购、审批与仓库作业。
+6. M6：头程、FBA 接收与补货。
+7. M7：财务对账、实际利润与月结。
+8. M8：完整业务验收与交付准备。
+
+现有实现采用 React + TypeScript + Ant Design、FastAPI、PostgreSQL，以及独立 Python 后台任务；依赖版本已通过前后端锁文件固定。
 
 ## 文档
 
-初始框架和技术选型见 [docs/technical-plan.md](docs/technical-plan.md)。
+- [ERP 功能规划与本轮验收范围](docs/erp-product-plan.md)
+- [开发执行计划、任务清单与资料准备](docs/development-plan.md)
+- [Web ERP 技术方案](docs/erp-technical-plan.md)
+- [本地开发与启动](docs/local-development.md)
+- [实施记录与验证结果](docs/implementation-log.md)
+- [早期本地利润分析工具技术方案（历史参考）](docs/technical-plan.md)

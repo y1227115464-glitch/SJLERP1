@@ -1,0 +1,9 @@
+[project]
+name = "sjlerp-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+description = "书剑录 ERP 业务服务"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

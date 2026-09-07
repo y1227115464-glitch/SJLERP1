@@ -1,0 +1,72 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Alert, Button, Empty, Spin, Tag } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+import { api, errorText } from './api';
+import type { ListResult } from './types';
+
+export function useResource<T>(path: string | null) {
+  const [snapshot, setSnapshot] = useState<{ path: string | null; data: T | null; loading: boolean; error: string }>({ path: null, data: null, loading: true, error: '' });
+  const [version, setVersion] = useState(0);
+  const reload = useCallback(() => setVersion(value => value + 1), []);
+  useEffect(() => {
+    let active = true;
+    if (!path) { setSnapshot({ path, data: null, loading: false, error: '' }); return; }
+    setSnapshot(previous => ({ path, data: previous.path === path ? previous.data : null, loading: true, error: '' }));
+    api<T>(path).then(data => { if (active) setSnapshot({ path, data, loading: false, error: '' }); })
+      .catch(cause => { if (active) setSnapshot({ path, data: null, loading: false, error: errorText(cause) }); });
+    return () => { active = false; };
+  }, [path, version]);
+  // Bind visible data to its source path so a store switch never renders the previous store's data.
+  const current = snapshot.path === path ? snapshot : { data: null, loading: !!path, error: '' };
+  return { data: current.data, loading: current.loading, error: current.error, reload };
+}
+export function usePagedList<T>(path: string) {
+  const [cursor, setCursor] = useState({ path, page: 1 });
+  useEffect(() => { setCursor({ path, page: 1 }); }, [path]);
+  const page = cursor.path === path ? cursor.page : 1;
+  const pageSize = 20;
+  const resource = useResource<ListResult<T>>(`${path}${path.includes('?') ? '&' : '?'}limit=${pageSize}&offset=${(page - 1) * pageSize}`);
+  return { ...resource, pagination: { current: page, pageSize, total: resource.data?.total ?? 0,
+    onChange: (next: number) => setCursor({ path, page: next }), showSizeChanger: false, showTotal: (total: number) => `共 ${total} 条` } };
+}
+export async function fetchAll<T>(path: string): Promise<T[]> {
+  const items: T[] = [];
+  let total = 1;
+  while (items.length < total) {
+    const result = await api<ListResult<T>>(`${path}?limit=200&offset=${items.length}`);
+    items.push(...result.items);
+    total = result.total;
+    if (!result.items.length) break;
+  }
+  return items;
+}
+export function PageHeading({ eyebrow, title, description, extra }: { eyebrow: string; title: string; description: string; extra?: ReactNode }) {
+  return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div><div className="heading-actions">{extra}</div></div>;
+}
+export function ErrorNotice({ error, retry }: { error: string; retry?: () => void }) {
+  if (!error) return null;
+  return <Alert className="error-notice" type="error" showIcon title="暂时无法完成请求" description={error}
+    action={retry ? <Button size="small" icon={<ReloadOutlined />} onClick={retry}>重试</Button> : undefined} />;
+}
+export function EmptyState({ text }: { text: string }) { return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text} />; }
+export function LoadingScreen() { return <div className="loading-screen"><Spin size="large" /><p>正在连接书剑录工作空间…</p></div>; }
+export const dateTime = (value?: string | null) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '—';
+export const roleLabels: Record<string, string> = { admin: '公司管理员', manager: '店铺主管', operator: '运营', finance: '财务', warehouse: '仓库' };
+export function ActiveTag({ active }: { active: boolean }) { return <Tag bordered={false} color={active ? 'success' : 'default'}>{active ? '启用中' : '已停用'}</Tag>; }
+
+export const permissionLabels: Record<string, string> = {
+  'workspace.view': '查看工作台', 'stores.view': '查看店铺', 'stores.manage': '管理店铺',
+  'stores.export': '导出店铺', 'users.manage': '管理账号', 'audit.view': '查看操作日志',
+  'jobs.view': '查看后台任务', 'jobs.run': '运行与重试任务', 'files.view': '查看与下载附件',
+  'files.upload': '上传附件', 'notifications.view': '查看个人通知', 'approvals.view': '查看审批',
+  'costs.view': '查看成本', 'finance.view': '查看财务数据',
+};
+export const actionLabels: Record<string, string> = {
+  'auth.login': '登录', 'auth.logout': '退出', 'stores.export': '导出店铺', 'stores.create': '新增店铺',
+  'stores.update': '更新店铺', 'users.create': '新增账号', 'users.update': '更新账号权限',
+  'users.bootstrap': '初始化管理员', 'jobs.create': '提交任务', 'jobs.retry': '重试任务',
+  'jobs.succeeded': '任务完成', 'jobs.failed': '任务失败', 'files.upload': '上传附件', 'files.download': '下载附件',
+};
+export const resourceLabels: Record<string, string> = { user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批' };

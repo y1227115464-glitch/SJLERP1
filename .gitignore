@@ -25,3 +25,18 @@ target/
 .idea/
 .vscode/
 
+# Python and local runtime
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.runtime/
+.local/
+data/
+coverage/
+.coverage
+htmlcov/
+playwright-report/
+test-results/
