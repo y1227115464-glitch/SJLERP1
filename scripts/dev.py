@@ -171,13 +171,14 @@ def create_admin(args):
 
 def run_apps(args):
     env = environment()
+    web_host = args.host or env.get('SJL_WEB_HOST', '127.0.0.1')
     if args.built and args.service in {'all', 'web'} and not (ROOT / 'apps/web/dist/index.html').is_file():
         raise SystemExit('缺少网站构建结果，请先运行 npm --prefix apps/web run build。')
     web_mode = 'preview' if args.built else 'dev'
     definitions = {
         'api': ([str(PYTHON), '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'], API),
         'worker': ([str(PYTHON), '-m', 'app.worker'], API),
-        'web': (['npm', 'run', web_mode, '--', '--port', '5173', '--strictPort'], ROOT / 'apps/web'),
+        'web': (['npm', 'run', web_mode, '--', '--host', web_host, '--port', '5173', '--strictPort'], ROOT / 'apps/web'),
     }
     selected = definitions if args.service == 'all' else {args.service: definitions[args.service]}
     logs = LOCAL / 'logs'
@@ -198,6 +199,8 @@ def run_apps(args):
                                              stderr=subprocess.STDOUT, start_new_session=True))
             print(f'{name} 已启动，日志：.local/logs/{name}.log', flush=True)
         print('Web http://127.0.0.1:5173 · API http://127.0.0.1:8000 · Ctrl+C 停止应用', flush=True)
+        if web_host != '127.0.0.1':
+            print(f'Web 监听 {web_host}:5173；局域网访问地址须加入 SJL_ALLOWED_ORIGINS。', flush=True)
         while all(child.poll() is None for child in children):
             time.sleep(0.5)
         failed = [child.returncode for child in children if child.returncode not in (None, 0, -15)]
@@ -227,6 +230,7 @@ def main():
     run = commands.add_parser('run')
     run.add_argument('service', choices=['all', 'api', 'worker', 'web'], default='all', nargs='?')
     run.add_argument('--built', action='store_true', help='通过本地预览服务运行已构建的网站')
+    run.add_argument('--host', help='Web 监听地址，默认读取 SJL_WEB_HOST 或使用 127.0.0.1；局域网使用 0.0.0.0')
     args = parser.parse_args()
     actions = {'init': initialize, 'infra-up': infra_up, 'infra-down': infra_down, 'migrate': migrate}
     if args.command in actions:

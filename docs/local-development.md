@@ -2,7 +2,7 @@
 
 ## 1. 项目运行方式
 
-Web、API 和后台任务使用独立进程。数据库使用 PostgreSQL，队列使用 Redis。所有本地服务仅绑定回环地址。
+Web、API 和后台任务使用独立进程。数据库使用 PostgreSQL，队列使用 Redis。默认仅绑定回环地址；局域网部署可单独开放 Web 入口，见下文。
 
 - Web：`http://127.0.0.1:5173`
 - API：`http://127.0.0.1:8000`
@@ -87,7 +87,36 @@ npm --prefix apps/web run build
 .venv/bin/python scripts/dev.py run --built
 ```
 
-访问地址仍为 `http://127.0.0.1:5173/`，复用已有账号和业务数据。此模式从 `apps/web/dist/` 提供页面，API 由同源代理连接；修改源码后需重新构建才会更新。仅供本机使用，未设置开机自启；电脑重启后按上述命令重新启动。该本地预览服务不作为公网生产服务器。
+访问地址仍为 `http://127.0.0.1:5173/`，复用已有账号和业务数据。此模式从 `apps/web/dist/` 提供页面，API 由同源代理连接；修改源码后需重新构建才会更新。未设置开机自启；电脑重启后按上述命令重新启动。该本地预览服务不作为公网生产服务器。
+
+### 局域网部署与后台运行
+
+在根目录 `.env` 中配置 Web 监听地址和允许登录的完整来源（将示例 IP 换成服务电脑的实际局域网 IPv4）：
+
+```dotenv
+SJL_WEB_HOST=0.0.0.0
+SJL_ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173,http://192.168.31.23:5173
+SJL_COOKIE_SECURE=false
+```
+
+使用已经安装好的依赖和项目独立数据库，在根目录执行：
+
+```bash
+bash scripts/local.sh start
+bash scripts/local.sh status
+# 停止应用、项目数据库及队列，保留全部数据：
+bash scripts/local.sh stop
+```
+
+`start` 会启动数据库和队列、执行迁移，并在后台运行构建后的前端、API 和 worker；首次缺少 `dist/` 时自动构建。关闭终端后服务继续运行，电脑重启后重新执行 `start`。日志位于 `.local/logs/`，管理员密码位于 `.local/admin-credentials.txt`。首次部署仍需先执行前述 `create-admin --generate` 创建管理员。
+
+前台运行可使用 `.venv/bin/python scripts/dev.py run --built --host 0.0.0.0`；`--host` 优先于 `.env` 的 `SJL_WEB_HOST`。API、PostgreSQL 和 Redis 继续仅监听 `127.0.0.1`，浏览器通过 Web 的同源代理访问 API。
+
+2026-09-08 本机部署入口为 `http://192.168.31.23:5173/`，使用 Python 3.12.7、Node 22.10.0、PostgreSQL 14.18 和 Redis 8.0.3。已有 Homebrew 程序通过 `.local/bin/` 链接供后台脚本使用，数据独立保存在本项目 `.local/`；未接入系统已有 Redis 的 6379 端口。此工作副本没有随仓库携带旧数据库或导入文件，初始化后业务档案为空。
+
+其他设备连接同一局域网后，用服务电脑的 IP 打开入口。电脑需保持开机且不进入睡眠。IP 变化时更新 `.env` 的 `SJL_ALLOWED_ORIGINS` 并停止、重新启动服务；路由器可为服务电脑保留固定 DHCP 地址。若本机能访问而其他设备不能，检查是否连接访客 Wi-Fi、路由器是否启用设备隔离，以及主机防火墙是否允许 TCP 5173。
+
+修改前端源码后，先 `stop`，执行 `npm --prefix apps/web run build`，再 `start`。此部署使用局域网 HTTP；不要将 5173 端口映射到公网。
 
 本地独立数据库与 Redis 停止命令：
 
