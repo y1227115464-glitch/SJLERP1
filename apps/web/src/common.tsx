@@ -62,11 +62,17 @@ export const permissionLabels: Record<string, string> = {
   'jobs.view': '查看后台任务', 'jobs.run': '运行与重试任务', 'files.view': '查看与下载附件',
   'files.upload': '上传附件', 'notifications.view': '查看个人通知', 'approvals.view': '查看审批',
   'costs.view': '查看成本', 'finance.view': '查看财务数据',
+  'products.view': '查看商品', 'products.manage': '管理与导入商品',
+  'suppliers.view': '查看供应商', 'suppliers.manage': '管理供应商',
+  'quotes.view': '查看采购报价', 'quotes.manage': '管理采购报价',
 };
 export const actionLabels: Record<string, string> = {
   'auth.login': '登录', 'auth.logout': '退出', 'stores.export': '导出店铺', 'stores.create': '新增店铺',
   'stores.update': '更新店铺', 'users.create': '新增账号', 'users.update': '更新账号权限',
   'users.bootstrap': '初始化管理员', 'jobs.create': '提交任务', 'jobs.retry': '重试任务',
+  'products.create': '新增商品', 'products.update': '更新商品', 'products.import_preview': '预览商品导入',
+  'products.import_confirm': '确认商品导入', 'suppliers.create': '新增供应商', 'suppliers.update': '更新供应商',
+  'quotes.create': '新增采购报价', 'quotes.update': '更新采购报价',
   'jobs.succeeded': '任务完成', 'jobs.failed': '任务失败', 'files.upload': '上传附件', 'files.download': '下载附件',
 };
-export const resourceLabels: Record<string, string> = { user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批' };
+export const resourceLabels: Record<string, string> = { user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入' };

@@ -4,7 +4,7 @@ import { ArrowRightOutlined, BellOutlined, CheckCircleFilled, ClockCircleOutline
 import { ActiveTag, dateTime, EmptyState, ErrorNotice, PageHeading, useResource } from './common';
 import type { Store, User, Workspace } from './types';
 
-type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit';
+type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes';
 export function WorkspacePage({ user, stores, selectedStore, onNavigate, onUnread }: { user: User; stores: Store[]; selectedStore: string; onNavigate: (page: Page) => void; onUnread: (count: number) => void }) {
   const { data, loading, error, reload } = useResource<Workspace>(selectedStore === 'all' ? '/workspace' : `/workspace?store_id=${encodeURIComponent(selectedStore)}`);
   useEffect(() => { if (data) onUnread(data.unread_notifications); }, [data, onUnread]);
@@ -35,6 +35,7 @@ export function WorkspacePage({ user, stores, selectedStore, onNavigate, onUnrea
       ]} />
     </Card></Col><Col xs={24} xl={8}><Card className="section-card" title="常用操作"><div className="quick-actions">{[
       { permission: 'stores.manage', title: '维护店铺档案', desc: '连接店铺、品牌与经营主体', page: 'stores' as const, icon: <ShopOutlined /> },
+      { permission: 'products.view', title: '维护商品资料', desc: '查看图片、规格与待核对项', page: 'products' as const, icon: <FileTextOutlined /> },
       { permission: 'users.manage', title: '配置团队权限', desc: '明确角色与店铺访问范围', page: 'users' as const, icon: <TeamOutlined /> },
       { permission: 'files.view', title: '整理业务附件', desc: '按访问范围存档和下载', page: 'attachments' as const, icon: <FolderOpenOutlined /> },
       { permission: 'jobs.view', title: '检查后台运行', desc: '查看任务执行和失败原因', page: 'jobs' as const, icon: <ThunderboltOutlined /> },

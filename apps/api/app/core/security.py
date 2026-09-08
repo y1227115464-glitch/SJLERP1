@@ -10,6 +10,7 @@ ALL_PERMISSIONS = [
     "workspace.view", "stores.view", "stores.manage", "stores.export", "users.manage", "audit.view",
     "jobs.view", "jobs.run", "files.view", "files.upload", "notifications.view", "approvals.view",
     "costs.view", "finance.view",
+    "products.view", "products.manage", "suppliers.view", "suppliers.manage", "quotes.view", "quotes.manage",
 ]
 BASIC = ["workspace.view", "stores.view", "jobs.view", "jobs.run", "files.view", "files.upload", "notifications.view", "approvals.view"]
 ROLES = {
@@ -19,6 +20,16 @@ ROLES = {
     "finance": {"label": "财务", "permissions": BASIC + ["stores.export", "audit.view", "costs.view", "finance.view"]},
     "warehouse": {"label": "仓库", "permissions": BASIC},
 }
+for role, config in ROLES.items():
+    if role == "admin":
+        continue
+    config["permissions"] = list(config["permissions"]) + ["products.view"]
+    if role in {"manager", "operator"}:
+        config["permissions"].append("products.manage")
+    if role in {"manager", "finance", "warehouse"}:
+        config["permissions"].append("suppliers.view")
+    if role in {"manager", "finance"}:
+        config["permissions"] += ["suppliers.manage", "quotes.view", "quotes.manage"]
 
 
 def permissions(user) -> list[str]:

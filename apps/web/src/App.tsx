@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, App as AntApp, Avatar, Badge, Button, DatePicker, Divider, Dropdown, Form, Input, Layout, Menu, Select, Tag, Tooltip } from 'antd';
-import { ApartmentOutlined, ArrowRightOutlined, BellOutlined, CalendarOutlined, CheckCircleOutlined, CloudUploadOutlined, DashboardOutlined, FileProtectOutlined, FolderOpenOutlined, ImportOutlined, LockOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, SafetyCertificateOutlined, SettingOutlined, ShopOutlined, TeamOutlined, ThunderboltOutlined, UserOutlined } from '@ant-design/icons';
+import { ApartmentOutlined, ArrowRightOutlined, BellOutlined, CalendarOutlined, CheckCircleOutlined, ContainerOutlined, DollarOutlined, CloudUploadOutlined, DashboardOutlined, FileProtectOutlined, FolderOpenOutlined, ImportOutlined, LockOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, QuestionCircleOutlined, SafetyCertificateOutlined, SettingOutlined, ShopOutlined, TeamOutlined, ThunderboltOutlined, UserOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api, errorText, setCsrfToken } from './api';
 import { fetchAll, LoadingScreen, roleLabels } from './common';
@@ -12,10 +12,13 @@ const AttachmentsPage = lazy(() => import('./SystemPages').then(module => ({ def
 const AuditPage = lazy(() => import('./SystemPages').then(module => ({ default: module.AuditPage })));
 const JobsPage = lazy(() => import('./SystemPages').then(module => ({ default: module.JobsPage })));
 const NotificationsPage = lazy(() => import('./SystemPages').then(module => ({ default: module.NotificationsPage })));
+const ProductsPage = lazy(() => import('./ProductPages').then(module => ({ default: module.ProductsPage })));
+const SuppliersPage = lazy(() => import('./SupplierPages').then(module => ({ default: module.SuppliersPage })));
+const QuotesPage = lazy(() => import('./QuotePages').then(module => ({ default: module.QuotesPage })));
 
-type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit';
-const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志' };
-const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view' };
+type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes';
+const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价' };
+const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view', products: 'products.view', suppliers: 'suppliers.view', quotes: 'quotes.view' };
 function initialPage(): Page { const hash = location.hash.slice(1); return hash in pageTitles ? hash as Page : 'workspace'; }
 
 export default function App() {
@@ -70,7 +73,9 @@ export default function App() {
     ].filter(Boolean) },
     { type: 'group' as const, label: '业务管理', children: [
       can('stores.view') && { key: 'stores', icon: <ShopOutlined />, label: '店铺管理' },
-      { key: 'products-planned', icon: <ApartmentOutlined />, label: <span className="planned-nav">商品与供应链<span>筹建</span></span>, disabled: true },
+      can('products.view') && { key: 'products', icon: <ApartmentOutlined />, label: '商品管理' },
+      can('suppliers.view') && { key: 'suppliers', icon: <ContainerOutlined />, label: '供应商管理' },
+      can('quotes.view') && can('costs.view') && { key: 'quotes', icon: <DollarOutlined />, label: '采购报价' },
       { key: 'imports-planned', icon: <ImportOutlined />, label: <span className="planned-nav">数据导入中心<span>筹建</span></span>, disabled: true },
       { key: 'finance-planned', icon: <FileProtectOutlined />, label: <span className="planned-nav">销售与财务<span>筹建</span></span>, disabled: true },
     ].filter(Boolean) },
@@ -81,6 +86,7 @@ export default function App() {
       can('audit.view') && { key: 'audit', icon: <SafetyCertificateOutlined />, label: '操作日志' },
     ].filter(Boolean) },
   ];
+  const sharedCatalog = ['products', 'suppliers', 'quotes'].includes(page);
   return <Layout className="app-layout">
     <Layout.Sider width={228} collapsedWidth={76} collapsed={collapsed} breakpoint="lg" onBreakpoint={setCollapsed} className="sidebar">
       <a className="brand" href="#workspace" aria-label="书剑录 ERP 首页"><span className="brand-mark">书</span>{!collapsed && <span className="brand-title">书剑录<span>SHUJIANLU ERP</span></span>}</a>
@@ -95,10 +101,10 @@ export default function App() {
         <Divider type="vertical" />
         <Dropdown trigger={['click']} menu={{ items: [{ key: 'identity', label: <div>{user.email}<br /><small>{roleLabels[user.role]}</small></div>, disabled: true }, { type: 'divider' }, { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, onClick: logout }] }}><Button type="text" className="user-button"><Avatar size={30} style={{ background: '#e8edf3', color: '#315b88' }}>{user.display_name.slice(0, 1)}</Avatar><span>{user.display_name}</span></Button></Dropdown>
       </div></Layout.Header>
-      <div className="scope-bar"><div className="scope-field"><ShopOutlined /><span className="filter-label">店铺</span><Select aria-label="选择店铺" value={selectedStore} onChange={setSelectedStore} style={{ minWidth: 190 }} variant="borderless" options={[{ value: 'all', label: user.role === 'admin' ? '全部店铺' : '我的全部店铺' }, ...stores.map(store => ({ value: store.id, label: `${store.name}${store.is_active ? '' : '（停用）'}` }))]} /></div><div className="scope-divider" /><div className="scope-field date-filter"><CalendarOutlined /><DatePicker.RangePicker aria-label="统计日期范围" value={range} onChange={value => { if (value?.[0] && value[1]) setRange([value[0], value[1]]); }} allowClear={false} variant="borderless" format="YYYY-MM-DD" /></div><Tooltip title="经营报表上线后使用此期间；当前账号、店铺和系统记录不按经营日期过滤。"><span className="scope-note"><QuestionCircleOutlined /> 经营期间待报表接入后生效</span></Tooltip></div>
+      {sharedCatalog ? <div className="scope-bar catalog-scope-bar"><ApartmentOutlined /><strong>公司共享档案</strong><span>当前页面不受店铺或经营日期筛选影响</span><Tag bordered={false}>按角色授权访问</Tag></div> : <div className="scope-bar"><div className="scope-field"><ShopOutlined /><span className="filter-label">店铺</span><Select aria-label="选择店铺" value={selectedStore} onChange={setSelectedStore} style={{ minWidth: 190 }} variant="borderless" options={[{ value: 'all', label: user.role === 'admin' ? '全部店铺' : '我的全部店铺' }, ...stores.map(store => ({ value: store.id, label: `${store.name}${store.is_active ? '' : '（停用）'}` }))]} /></div><div className="scope-divider" /><div className="scope-field date-filter"><CalendarOutlined /><DatePicker.RangePicker aria-label="统计日期范围" value={range} onChange={value => { if (value?.[0] && value[1]) setRange([value[0], value[1]]); }} allowClear={false} variant="borderless" format="YYYY-MM-DD" /></div><Tooltip title="经营报表上线后使用此期间；当前账号、店铺和系统记录不按经营日期过滤。"><span className="scope-note"><QuestionCircleOutlined /> 经营期间待报表接入后生效</span></Tooltip></div>}
       <Layout.Content className="content">
         {storeError && <Alert type="error" showIcon title="店铺列表加载失败" description={storeError} action={<Button onClick={() => void refreshStores()}>重试</Button>} style={{ marginBottom: 20 }} />}
-        {!can(pagePermissions[page]) ? <Alert type="warning" showIcon title="暂无访问权限" description="当前账号无法查看此页面。如需调整，请联系公司管理员。" /> : <Suspense fallback={<div className="page-loading">页面加载中…</div>}>
+        {(!can(pagePermissions[page]) || (page === 'quotes' && !can('costs.view'))) ? <Alert type="warning" showIcon title="暂无访问权限" description="当前账号无法查看此页面。如需调整，请联系公司管理员。" /> : <Suspense fallback={<div className="page-loading">页面加载中…</div>}>
           {page === 'workspace' && <WorkspacePage user={user} stores={stores} selectedStore={selectedStore} onNavigate={navigate} onUnread={setUnread} />}
           {page === 'stores' && <StoresPage user={user} stores={stores} selectedStore={selectedStore} refreshStores={refreshStores} />}
           {page === 'users' && <UsersPage user={user} stores={stores} />}
@@ -106,6 +112,9 @@ export default function App() {
           {page === 'notifications' && <NotificationsPage onUnread={setUnread} />}
           {page === 'attachments' && <AttachmentsPage user={user} stores={stores} selectedStore={selectedStore} />}
           {page === 'audit' && <AuditPage selectedStore={selectedStore} />}
+          {page === 'products' && <ProductsPage user={user} />}
+          {page === 'suppliers' && <SuppliersPage user={user} />}
+          {page === 'quotes' && <QuotesPage user={user} />}
         </Suspense>}
         <footer className="page-footer"><span>书剑录 ERP</span><span>美国站 · FBA 经营与供应链管理</span></footer>
       </Layout.Content>

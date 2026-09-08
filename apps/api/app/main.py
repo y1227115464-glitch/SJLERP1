@@ -12,6 +12,7 @@ from app.core.config import Settings
 from app.core.body_limit import BodyLimitMiddleware
 from app.core.database import Database
 from app.routes import router
+from app.catalog_routes import router as catalog_router
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=200 if good else 503, content={"status": "ok" if good else "degraded", **checks})
 
     app.include_router(router)
+    app.include_router(catalog_router)
     return app
 
 

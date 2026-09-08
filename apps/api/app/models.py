@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -127,3 +127,99 @@ class Approval(Base):
     resource_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Product(Base):
+    __tablename__ = "products"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    internal_sku: Mapped[str] = mapped_column(String(120), unique=True)
+    name: Mapped[str] = mapped_column(String(500))
+    name_zh: Mapped[str] = mapped_column(String(200), default="")
+    brand: Mapped[str] = mapped_column(String(120), default="", index=True)
+    category: Mapped[str] = mapped_column(String(120), default="")
+    specifications: Mapped[str] = mapped_column(Text, default="")
+    material: Mapped[str] = mapped_column(String(120), default="")
+    title: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    asin: Mapped[str] = mapped_column(String(40), default="", index=True)
+    fnsku: Mapped[str] = mapped_column(String(40), default="", index=True)
+    image_url: Mapped[str] = mapped_column(String(2000), default="")
+    image_urls: Mapped[list] = mapped_column(JSON, default=list)
+    bullet_points: Mapped[list] = mapped_column(JSON, default=list)
+    amazon_url: Mapped[str] = mapped_column(String(2000), default="")
+    sale_price: Mapped[object | None] = mapped_column(Numeric(18, 4), nullable=True)
+    original_sale_price: Mapped[object | None] = mapped_column(Numeric(18, 4), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    review_notes: Mapped[list] = mapped_column(JSON, default=list)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    source_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_filename: Mapped[str] = mapped_column(String(255), default="")
+    source_row: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    code: Mapped[str] = mapped_column(String(50), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    name_key: Mapped[str] = mapped_column(String(400), unique=True)
+    contact_name: Mapped[str] = mapped_column(String(120), default="")
+    phone: Mapped[str] = mapped_column(String(80), default="")
+    email: Mapped[str] = mapped_column(String(254), default="")
+    address: Mapped[str] = mapped_column(String(1000), default="")
+    payment_terms: Mapped[str] = mapped_column(String(2000), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class QuoteProduct(Base):
+    __tablename__ = "quote_products"
+    quote_id: Mapped[str] = mapped_column(ForeignKey("supplier_quotes.id", ondelete="CASCADE"), primary_key=True)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), primary_key=True)
+
+
+class SupplierQuote(Base):
+    __tablename__ = "supplier_quotes"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    supplier_id: Mapped[str] = mapped_column(ForeignKey("suppliers.id"), index=True)
+    supplier: Mapped[Supplier] = relationship(lazy="selectin")
+    products: Mapped[list[Product]] = relationship(secondary="quote_products", lazy="selectin")
+    label: Mapped[str] = mapped_column(String(200))
+    packaging: Mapped[str] = mapped_column(String(500), default="")
+    currency: Mapped[str] = mapped_column(String(3), default="CNY")
+    tax_status: Mapped[str] = mapped_column(String(20), default="unknown")
+    includes_shipping: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    includes_labeling: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    labeling_fee: Mapped[object | None] = mapped_column(Numeric(18, 4), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(20), default="needs_review", index=True)
+    review_notes: Mapped[str] = mapped_column(Text, default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    source_text: Mapped[str] = mapped_column(Text, default="")
+    source_reference: Mapped[str] = mapped_column(String(2000), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    tiers: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class ProductImport(Base):
+    __tablename__ = "product_imports"
+    __table_args__ = (UniqueConstraint("owner_id", "file_hash", "price_unit", name="uq_product_import_source"),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    file_hash: Mapped[str] = mapped_column(String(64))
+    price_unit: Mapped[str] = mapped_column(String(20))
+    filename: Mapped[str] = mapped_column(String(255))
+    storage_key: Mapped[str] = mapped_column(String(64), unique=True)
+    parsed_rows: Mapped[list] = mapped_column(JSON)
+    errors: Mapped[list] = mapped_column(JSON)
+    warnings: Mapped[list] = mapped_column(JSON)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

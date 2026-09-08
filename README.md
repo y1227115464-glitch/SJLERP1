@@ -2,7 +2,7 @@
 
 SJLERP（书剑录 ERP）是面向美国站亚马逊多店铺业务的内部 Web 管理系统，以 FBA 业务为主，规划统一管理店铺、商品、销售、广告、利润、库存、采购与物流。
 
-首批 M1 基础功能已可运行：账号权限、店铺、附件、后台任务、通知和审计。前后端已连接真实数据库与队列并通过本地集成验证；主体档案、业务敏感字段和经营日期筛选将随后续业务模块补齐。完整业务范围见 [ERP 功能规划](docs/erp-product-plan.md)，任务进度见 [开发执行计划](docs/development-plan.md)，本轮结果见 [实施记录](docs/implementation-log.md)。
+已可运行：账号权限、店铺、附件、后台任务、通知和审计，以及商品管理、商品 CSV 导入、供应商档案和采购报价。已将用户提供的 35 个商品、2 家供应商及 33 条报价导入本地真实数据库；阶梯、税费说明和原始来源分别保留。主体档案、店铺 SKU 映射、正式成本和经营报表仍按计划推进。完整业务范围见 [ERP 功能规划](docs/erp-product-plan.md)，任务进度见 [开发执行计划](docs/development-plan.md)，验证结果见 [实施记录](docs/implementation-log.md)。
 
 ## 本地运行
 
@@ -43,4 +43,5 @@ Web 地址为 `http://127.0.0.1:5173`。首次安装需按启动文档创建管�
 - [Web ERP 技术方案](docs/erp-technical-plan.md)
 - [本地开发与启动](docs/local-development.md)
 - [实施记录与验证结果](docs/implementation-log.md)
+- [商品、供应商与采购报价使用说明](docs/catalog-management.md)
 - [早期本地利润分析工具技术方案（历史参考）](docs/technical-plan.md)
