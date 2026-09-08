@@ -116,4 +116,6 @@
 .report-actions { margin: 20px 0; }
 .report-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
 .report-filters label { display: grid; gap: 5px; color: #526271; font-size: 12px; }
+.report-search { width: 400px; max-width: 100%; }
+.report-search-hint { padding: 8px 12px; color: #526271; font-size: 12px; }
 @media (max-width: 760px) { .report-import-options { grid-template-columns: 1fr; } .report-counts { grid-template-columns: repeat(2, 1fr); } }

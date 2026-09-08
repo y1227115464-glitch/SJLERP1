@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Alert, Button, Card, Descriptions, Drawer, Input, Select, Table, Tag } from 'antd';
 import { ImportOutlined, ReloadOutlined } from '@ant-design/icons';
 import { ErrorNotice, PageHeading, usePagedList, useResource } from './common';
-import { queryPath, useDebouncedValue } from './CatalogShared';
+import { queryPath } from './CatalogShared';
 import { ReportBatchDrawer, reportMoney } from './ReportImports';
+import { ReportSearch } from './ReportSearch';
+import type { ReportSearchValue } from './ReportSearch';
 import type { ReportData, ReportKind, SummaryGroup } from './report-types';
 import type { User } from './types';
 
@@ -18,8 +20,7 @@ const labels: Record<string, string> = { amazon_order_id: '亚马逊订单号', 
   advertised_sales: '广告 SKU 销售额', other_sales: '其他 SKU 销售额', attribution_days: '归因窗口（天）' };
 
 export function ReportRecordsPage({ kind, user, selectedStore, onImport }: { kind: ReportKind; user: User; selectedStore: string; onImport: () => void }) {
-  const [search, setSearch] = useState('');
-  const q = useDebouncedValue(search);
+  const [search, setSearch] = useState<ReportSearchValue>({ q: '', sku: '' });
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [status, setStatus] = useState<string | undefined>();
@@ -27,7 +28,8 @@ export function ReportRecordsPage({ kind, user, selectedStore, onImport }: { kin
   const [record, setRecord] = useState<ReportData | null>(null);
   const [batch, setBatch] = useState<string | null>(null);
   const route = kind === 'sales' ? '/sales-records' : '/ad-records';
-  const filters = { store_id: selectedStore === 'all' ? undefined : selectedStore, q, start_date: start, end_date: end, status: kind === 'sales' ? status : undefined, granularity: kind === 'ads' ? granularity : undefined };
+  const context = { store_id: selectedStore === 'all' ? undefined : selectedStore, start_date: start, end_date: end, status: kind === 'sales' ? status : undefined, granularity: kind === 'ads' ? granularity : undefined };
+  const filters = { ...context, ...search };
   const list = usePagedList<ReportData>(queryPath(route, filters));
   const summary = useResource<{ groups: SummaryGroup[] }>(queryPath(`${route}/summary`, filters));
   const refresh = () => { list.reload(); summary.reload(); };
@@ -36,7 +38,7 @@ export function ReportRecordsPage({ kind, user, selectedStore, onImport }: { kin
     description={isSales ? '查看导入后的订单明细、数量和金额，重叠报告按业务键合并并保留来源。' : '按天查看商品推广数据与 7 天归因指标，同日同 SKU、活动和广告组保留最新导入记录。'}
     extra={user.permissions.includes('reports.import') && <Button type="primary" icon={<ImportOutlined />} onClick={onImport}>前往导入</Button>} />
     <Alert type="info" showIcon title={isSales ? '订单金额口径' : '按天覆盖与统计口径'} description={isSales ? '净额 = 商品金额 + 运费 + 礼品包装费 − 商品优惠 − 运费优惠，不含税、不乘数量。待处理与取消订单分组展示，缺失金额保留为空；不代表结算收入或利润。' : '同店铺按日期、SKU、广告活动名称和广告组名称去重，新导入覆盖之前的数据。日报与历史区间分别汇总；比率重新计算，广告销售额不叠加到订单销售额。'} />
-    <Card className="section-card"><div className="report-filters"><Input.Search allowClear placeholder={isSales ? '搜索订单号、SKU、ASIN 或商品' : '搜索活动、广告组、SKU 或 ASIN'} value={search} onChange={event => setSearch(event.target.value)} style={{ maxWidth: 400 }} />
+    <Card className="section-card"><div className="report-filters"><ReportSearch route={route} context={context} value={search} onSearch={setSearch} />
       <label>开始日期<Input aria-label="报表开始日期" type="date" value={start} onChange={event => setStart(event.target.value)} /></label>
       <label>结束日期<Input aria-label="报表结束日期" type="date" value={end} onChange={event => setEnd(event.target.value)} /></label>
       {isSales && <Select aria-label="筛选订单状态" placeholder="全部状态" allowClear value={status} onChange={setStatus} options={['Pending', 'Shipped', 'Cancelled', 'Partially Shipped', 'Unshipped'].map(value => ({ value, label: statusLabels[value] }))} style={{ width: 130 }} />}

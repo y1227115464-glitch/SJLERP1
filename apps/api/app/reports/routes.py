@@ -2,7 +2,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import defer
@@ -69,7 +69,7 @@ def confirm(identifier: str, payload: Confirmation, db: DB, user: Writer):
     return confirm_import(db, user, identifier, payload.verification_token)
 
 
-def records_query(model, user, store_id, start_date, end_date, q):
+def records_query(model, user, store_id, start_date, end_date, q, sku=''):
     query = scope(select(model), model, user, store_id)
     if start_date and end_date and start_date > end_date:
         fail(422, 'invalid_period', '开始日期不能晚于结束日期')
@@ -91,7 +91,36 @@ def records_query(model, user, store_id, start_date, end_date, q):
         if len(q) > 200:
             fail(422, 'invalid_query', '搜索内容过长')
         query = query.where(or_(*(col.icontains(q, autoescape=True) for col in columns)))
+    if sku:
+        query = query.where(model.sku == sku)
     return query
+
+
+def sku_options(db, query, column, term, limit):
+    query = query.with_only_columns(column).distinct().order_by(column)
+    if term.strip():
+        query = query.where(column.icontains(term.strip(), autoescape=True))
+    values = db.scalars(query.limit(limit + 1)).all()
+    return {'items': values[:limit], 'has_more': len(values) > limit}
+
+
+@router.get('/sales-records/suggestions')
+def sales_suggestions(db: DB, user: Reader, store_id: str | None = None, start_date: date | None = None,
+                      end_date: date | None = None, status: str = '', q: str = Query('', max_length=200),
+                      limit: int = Query(50, ge=1, le=100)):
+    query = records_query(SalesRecord, user, store_id, start_date, end_date, '')
+    if status:
+        query = query.where(SalesRecord.order_status == status)
+    return sku_options(db, query, SalesRecord.sku, q, limit)
+
+
+@router.get('/ad-records/suggestions')
+def ad_suggestions(db: DB, user: Reader, store_id: str | None = None, start_date: date | None = None,
+                   end_date: date | None = None, granularity: Literal['daily', 'period'] = 'daily',
+                   q: str = Query('', max_length=200), limit: int = Query(50, ge=1, le=100)):
+    query = records_query(AdRecord, user, store_id, start_date, end_date, '')
+    query = query.where(AdRecord.report_date.is_not(None) if granularity == 'daily' else AdRecord.report_date.is_(None))
+    return sku_options(db, query, AdRecord.sku, q, limit)
 
 
 def record_out(record):
@@ -104,8 +133,8 @@ def record_out(record):
 
 @router.get('/sales-records')
 def sales(db: DB, user: Reader, page: Page, store_id: str | None = None, start_date: date | None = None,
-          end_date: date | None = None, q: str = '', status: str = ''):
-    query = records_query(SalesRecord, user, store_id, start_date, end_date, q)
+          end_date: date | None = None, q: str = '', status: str = '', sku: str = Query('', max_length=120)):
+    query = records_query(SalesRecord, user, store_id, start_date, end_date, q, sku)
     if status:
         query = query.where(SalesRecord.order_status == status)
     return paginated(db, query.order_by(SalesRecord.purchase_date.desc(), SalesRecord.id), page, record_out)
@@ -113,16 +142,17 @@ def sales(db: DB, user: Reader, page: Page, store_id: str | None = None, start_d
 
 @router.get('/ad-records')
 def ads(db: DB, user: Reader, page: Page, store_id: str | None = None, start_date: date | None = None,
-        end_date: date | None = None, q: str = '', granularity: Literal['daily', 'period'] = 'daily'):
-    query = records_query(AdRecord, user, store_id, start_date, end_date, q)
+        end_date: date | None = None, q: str = '', granularity: Literal['daily', 'period'] = 'daily',
+        sku: str = Query('', max_length=120)):
+    query = records_query(AdRecord, user, store_id, start_date, end_date, q, sku)
     query = query.where(AdRecord.report_date.is_not(None) if granularity == 'daily' else AdRecord.report_date.is_(None))
     return paginated(db, query.order_by(AdRecord.start_date.desc(), AdRecord.id), page, record_out)
 
 
 @router.get('/sales-records/summary')
 def sales_summary(db: DB, user: Reader, store_id: str | None = None, start_date: date | None = None,
-                  end_date: date | None = None, q: str = '', status: str = ''):
-    query = records_query(SalesRecord, user, store_id, start_date, end_date, q)
+                  end_date: date | None = None, q: str = '', status: str = '', sku: str = Query('', max_length=120)):
+    query = records_query(SalesRecord, user, store_id, start_date, end_date, q, sku)
     if status:
         query = query.where(SalesRecord.order_status == status)
     source = query.subquery()
@@ -140,8 +170,9 @@ def ratio(numerator, denominator):
 
 @router.get('/ad-records/summary')
 def ad_summary(db: DB, user: Reader, store_id: str | None = None, start_date: date | None = None,
-               end_date: date | None = None, q: str = '', granularity: Literal['daily', 'period'] = 'daily'):
-    query = records_query(AdRecord, user, store_id, start_date, end_date, q)
+               end_date: date | None = None, q: str = '', granularity: Literal['daily', 'period'] = 'daily',
+               sku: str = Query('', max_length=120)):
+    query = records_query(AdRecord, user, store_id, start_date, end_date, q, sku)
     source = query.where(AdRecord.report_date.is_not(None) if granularity == 'daily' else AdRecord.report_date.is_(None)).subquery()
     fields = ['impressions', 'clicks', 'spend', 'attributed_sales', 'orders', 'units']
     result = db.execute(select(source.c.currency, func.count(), *(func.sum(source.c[field]) for field in fields)).group_by(source.c.currency))
