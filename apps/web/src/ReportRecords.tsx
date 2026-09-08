@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Alert, Button, Card, Descriptions, Drawer, Input, Select, Table, Tag } from 'antd';
+import { Alert, Button, Card, Descriptions, Drawer, Select, Table, Tag } from 'antd';
 import { ImportOutlined, ReloadOutlined } from '@ant-design/icons';
 import { ErrorNotice, PageHeading, usePagedList, useResource } from './common';
 import { queryPath } from './CatalogShared';
 import { ReportBatchDrawer, reportMoney } from './ReportImports';
 import { ReportSearch } from './ReportSearch';
+import { ReportDateFilter } from './ReportDateFilter';
+import type { ReportDateRange } from './report-date-ranges';
 import type { ReportSearchValue } from './ReportSearch';
 import type { ReportData, ReportKind, SummaryGroup } from './report-types';
 import type { User } from './types';
@@ -21,8 +23,8 @@ const labels: Record<string, string> = { amazon_order_id: '亚马逊订单号', 
 
 export function ReportRecordsPage({ kind, user, selectedStore, onImport }: { kind: ReportKind; user: User; selectedStore: string; onImport: () => void }) {
   const [search, setSearch] = useState<ReportSearchValue>({ q: '', sku: '' });
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
+  const [dateRange, setDateRange] = useState<ReportDateRange>({ start: '', end: '' });
+  const { start, end } = dateRange;
   const [status, setStatus] = useState<string | undefined>();
   const [granularity, setGranularity] = useState<'daily' | 'period'>('daily');
   const [record, setRecord] = useState<ReportData | null>(null);
@@ -39,11 +41,10 @@ export function ReportRecordsPage({ kind, user, selectedStore, onImport }: { kin
     extra={user.permissions.includes('reports.import') && <Button type="primary" icon={<ImportOutlined />} onClick={onImport}>前往导入</Button>} />
     <Alert type="info" showIcon title={isSales ? '订单金额口径' : '按天覆盖与统计口径'} description={isSales ? '净额 = 商品金额 + 运费 + 礼品包装费 − 商品优惠 − 运费优惠，不含税、不乘数量。待处理与取消订单分组展示，缺失金额保留为空；不代表结算收入或利润。' : '同店铺按日期、SKU、广告活动名称和广告组名称去重，新导入覆盖之前的数据。日报与历史区间分别汇总；比率重新计算，广告销售额不叠加到订单销售额。'} />
     <Card className="section-card"><div className="report-filters"><ReportSearch route={route} context={context} value={search} onSearch={setSearch} />
-      <label>开始日期<Input aria-label="报表开始日期" type="date" value={start} onChange={event => setStart(event.target.value)} /></label>
-      <label>结束日期<Input aria-label="报表结束日期" type="date" value={end} onChange={event => setEnd(event.target.value)} /></label>
+      <ReportDateFilter value={dateRange} onChange={setDateRange} />
       {isSales && <Select aria-label="筛选订单状态" placeholder="全部状态" allowClear value={status} onChange={setStatus} options={['Pending', 'Shipped', 'Cancelled', 'Partially Shipped', 'Unshipped'].map(value => ({ value, label: statusLabels[value] }))} style={{ width: 130 }} />}
       {!isSales && <Select aria-label="广告数据粒度" value={granularity} onChange={setGranularity} options={[{ value: 'daily', label: '日报' }, { value: 'period', label: '历史区间' }]} style={{ width: 130 }} />}
-      <Button onClick={() => { setStart(''); setEnd(''); }}>全部日期</Button><Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button></div>
+      <Button onClick={() => setDateRange({ start: '', end: '' })}>全部日期</Button><Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button></div>
       <p className="table-subtext">{isSales ? '按 UTC 下单日期筛选，默认显示全部日期。' : granularity === 'daily' ? '按源报告日期筛选，缺失日期不视为零。旧版多日汇总可切换「历史区间」查看。' : '仅查看旧版多日汇总，筛选需完整包含报告区间；不与日报合计。'}</p>
     </Card>
     <ErrorNotice error={summary.error} retry={summary.reload} /><Card className="section-card" title={isSales ? '按币种和状态核对' : '按币种汇总'}>

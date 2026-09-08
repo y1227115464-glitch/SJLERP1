@@ -115,7 +115,18 @@
 .report-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding: 24px 0; }
 .report-actions { margin: 20px 0; }
 .report-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
-.report-filters label { display: grid; gap: 5px; color: #526271; font-size: 12px; }
 .report-search { width: 400px; max-width: 100%; }
 .report-search-hint { padding: 8px 12px; color: #526271; font-size: 12px; }
+.report-date-filter { width: 365px; max-width: 100%; }
+.report-date-panel { position: relative; }
+.report-date-presets-heading { position: absolute; top: 12px; left: 12px; z-index: 1; display: flex; flex-direction: column; }
+.report-date-preset-help { font-size: 11px; color: #718397; margin: 2px 0 8px; }
+.report-date-popup .ant-picker-presets { padding: 58px 12px 8px; min-width: 128px; }
+.report-date-popup.ant-picker-dropdown .ant-picker-panel-container .ant-picker-presets ul { padding: 0; border-inline-end: 0; }
+.report-date-popup.ant-picker-dropdown .ant-picker-panel-container .ant-picker-presets ul li { padding: 0; margin: 0; }
+.report-date-popup.ant-picker-dropdown .ant-picker-panel-container .ant-picker-presets ul li + li { margin-top: 1px; }
+.report-date-popup .ant-picker-presets .ant-btn { width: 100%; text-align: left; justify-content: flex-start; height: 29px; padding-inline: 9px; }
+.report-date-popup .report-date-preset-active { background: #eef4fb; color: #315b88; font-weight: 600; }
+.report-date-popup .ant-picker-panel-container { max-width: calc(100vw - 24px); max-height: calc(100vh - 100px); overflow: auto; }
+@media (max-width: 720px) { .report-date-popup .ant-picker-panels { flex-direction: column; } }
 @media (max-width: 760px) { .report-import-options { grid-template-columns: 1fr; } .report-counts { grid-template-columns: repeat(2, 1fr); } }
