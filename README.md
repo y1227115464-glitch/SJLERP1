@@ -2,7 +2,7 @@
 
 SJLERP（书剑录 ERP）是面向美国站亚马逊多店铺业务的内部 Web 管理系统，以 FBA 业务为主，规划统一管理店铺、商品、销售、广告、利润、库存、采购与物流。
 
-已可运行：账号权限、店铺、附件、后台任务、通知和审计，以及商品管理、商品 CSV 导入、供应商档案和采购报价。已将用户提供的 35 个商品、2 家供应商及 33 条报价导入本地真实数据库；阶梯、税费说明和原始来源分别保留。主体档案、店铺 SKU 映射、正式成本和经营报表仍按计划推进。完整业务范围见 [ERP 功能规划](docs/erp-product-plan.md)，任务进度见 [开发执行计划](docs/development-plan.md)，验证结果见 [实施记录](docs/implementation-log.md)。
+已可运行：账号权限、店铺、附件、后台任务、通知和审计，以及商品管理、商品 CSV 导入、供应商档案、采购报价、采购记录、发货进度和库存管理。采购支持分批发货与到货，仓库收发货联动实物、占用、可用及在途数量，并保留库存流水。商品资料的历史整理、导入验证和当前实例的数据核对见实施记录；新实例需按实际资料建档。主体档案、店铺 SKU 映射、正式成本和经营报表仍按计划推进。完整业务范围见 [ERP 功能规划](docs/erp-product-plan.md)，任务进度见 [开发执行计划](docs/development-plan.md)，验证结果见 [实施记录](docs/implementation-log.md)。
 
 ## 本地运行
 
@@ -15,6 +15,8 @@ SJLERP（书剑录 ERP）是面向美国站亚马逊多店铺业务的内部 Web
 ```
 
 Web 地址为 `http://127.0.0.1:5173`。首次安装需按启动文档创建管理员，系统不提供固定通用密码。订单、广告导入及采购财务等业务模块仍在后续里程碑内。
+
+已配置局域网环境时，使用 `bash scripts/local.sh start` 后台启动，`bash scripts/local.sh status` 查看状态，`bash scripts/local.sh stop` 停止并保留数据。局域网监听和登录来源配置见 [局域网部署与后台运行](docs/local-development.md#局域网部署与后台运行)。
 
 ## 已确认建设范围
 
@@ -44,4 +46,5 @@ Web 地址为 `http://127.0.0.1:5173`。首次安装需按启动文档创建管�
 - [本地开发与启动](docs/local-development.md)
 - [实施记录与验证结果](docs/implementation-log.md)
 - [商品、供应商与采购报价使用说明](docs/catalog-management.md)
+- [采购、发货与库存使用说明](docs/supply-chain.md)
 - [早期本地利润分析工具技术方案（历史参考）](docs/technical-plan.md)

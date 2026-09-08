@@ -3,6 +3,7 @@ from alembic import context
 from app.core.config import Settings
 from app.core.database import Database
 from app.models import Base
+from app.supply import models as supply_models  # Register supply tables with Base.metadata.
 
 target_metadata = Base.metadata
 settings = Settings()

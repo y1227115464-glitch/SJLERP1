@@ -65,6 +65,9 @@ export const permissionLabels: Record<string, string> = {
   'products.view': '查看商品', 'products.manage': '管理与导入商品',
   'suppliers.view': '查看供应商', 'suppliers.manage': '管理供应商',
   'quotes.view': '查看采购报价', 'quotes.manage': '管理采购报价',
+  'purchases.view': '查看采购记录', 'purchases.manage': '维护与提交采购单',
+  'shipments.view': '查看发货进度', 'shipments.manage': '维护货件与收发货',
+  'inventory.view': '查看库存与流水', 'inventory.adjust': '登记期初和库存调整', 'warehouses.manage': '管理仓库档案',
 };
 export const actionLabels: Record<string, string> = {
   'auth.login': '登录', 'auth.logout': '退出', 'stores.export': '导出店铺', 'stores.create': '新增店铺',
@@ -73,6 +76,9 @@ export const actionLabels: Record<string, string> = {
   'products.create': '新增商品', 'products.update': '更新商品', 'products.import_preview': '预览商品导入',
   'products.import_confirm': '确认商品导入', 'suppliers.create': '新增供应商', 'suppliers.update': '更新供应商',
   'quotes.create': '新增采购报价', 'quotes.update': '更新采购报价',
+  'purchases.create': '新增采购单', 'purchases.update': '修改采购草稿', 'purchases.confirm': '提交采购单', 'purchases.cancel': '取消采购余量',
+  'shipments.create': '建立发货计划', 'shipments.update': '维护物流资料', 'shipments.dispatch': '确认发货', 'shipments.cancel': '取消发货计划', 'shipments.event': '跟进物流进度', 'shipments.receive': '登记接收入库',
+  'inventory.adjust': '调整库存', 'warehouses.create': '新增仓库', 'warehouses.update': '更新仓库档案',
   'jobs.succeeded': '任务完成', 'jobs.failed': '任务失败', 'files.upload': '上传附件', 'files.download': '下载附件',
 };
-export const resourceLabels: Record<string, string> = { user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入' };
+export const resourceLabels: Record<string, string> = { user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入', purchase_order: '采购单', shipment: '货件', inventory: '库存', warehouse: '仓库' };

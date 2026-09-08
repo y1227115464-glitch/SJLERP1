@@ -103,3 +103,11 @@
   .supplier-detail-heading { gap: 14px; }
   .supplier-detail-heading h2 { font-size: 21px; }
 }
+
+/* Supply chain pages reuse the existing data-table and form system. */
+.supply-detail-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; margin-bottom: 24px; }
+.supply-detail-heading h2 { margin: 0 0 12px; font-size: 21px; font-weight: 500; color: #304863; }
+.supply-summary { margin-bottom: 20px; }
+.supply-summary .ant-statistic-title { color: #718397; }
+.supply-summary .ant-statistic-content { color: #304863; }
+.supply-zero { color: #b77a36; }

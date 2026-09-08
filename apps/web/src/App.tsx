@@ -15,10 +15,13 @@ const NotificationsPage = lazy(() => import('./SystemPages').then(module => ({ d
 const ProductsPage = lazy(() => import('./ProductPages').then(module => ({ default: module.ProductsPage })));
 const SuppliersPage = lazy(() => import('./SupplierPages').then(module => ({ default: module.SuppliersPage })));
 const QuotesPage = lazy(() => import('./QuotePages').then(module => ({ default: module.QuotesPage })));
+const PurchasesPage = lazy(() => import('./PurchasePages').then(module => ({ default: module.PurchasesPage })));
+const ShipmentsPage = lazy(() => import('./ShipmentPages').then(module => ({ default: module.ShipmentsPage })));
+const InventoryPage = lazy(() => import('./InventoryPages').then(module => ({ default: module.InventoryPage })));
 
-type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes';
-const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价' };
-const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view', products: 'products.view', suppliers: 'suppliers.view', quotes: 'quotes.view' };
+type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes' | 'purchases' | 'shipments' | 'inventory';
+const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价', purchases: '采购记录', shipments: '发货进度', inventory: '库存管理' };
+const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view', products: 'products.view', suppliers: 'suppliers.view', quotes: 'quotes.view', purchases: 'purchases.view', shipments: 'shipments.view', inventory: 'inventory.view' };
 function initialPage(): Page { const hash = location.hash.slice(1); return hash in pageTitles ? hash as Page : 'workspace'; }
 
 export default function App() {
@@ -76,6 +79,9 @@ export default function App() {
       can('products.view') && { key: 'products', icon: <ApartmentOutlined />, label: '商品管理' },
       can('suppliers.view') && { key: 'suppliers', icon: <ContainerOutlined />, label: '供应商管理' },
       can('quotes.view') && can('costs.view') && { key: 'quotes', icon: <DollarOutlined />, label: '采购报价' },
+      can('purchases.view') && { key: 'purchases', icon: <FileProtectOutlined />, label: '采购记录' },
+      can('shipments.view') && { key: 'shipments', icon: <ContainerOutlined />, label: '发货进度' },
+      can('inventory.view') && { key: 'inventory', icon: <ApartmentOutlined />, label: '库存管理' },
       { key: 'imports-planned', icon: <ImportOutlined />, label: <span className="planned-nav">数据导入中心<span>筹建</span></span>, disabled: true },
       { key: 'finance-planned', icon: <FileProtectOutlined />, label: <span className="planned-nav">销售与财务<span>筹建</span></span>, disabled: true },
     ].filter(Boolean) },
@@ -115,6 +121,9 @@ export default function App() {
           {page === 'products' && <ProductsPage user={user} />}
           {page === 'suppliers' && <SuppliersPage user={user} />}
           {page === 'quotes' && <QuotesPage user={user} />}
+          {page === 'purchases' && <PurchasesPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
+          {page === 'shipments' && <ShipmentsPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
+          {page === 'inventory' && <InventoryPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
         </Suspense>}
         <footer className="page-footer"><span>书剑录 ERP</span><span>美国站 · FBA 经营与供应链管理</span></footer>
       </Layout.Content>
