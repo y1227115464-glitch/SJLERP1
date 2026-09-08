@@ -16,6 +16,7 @@ from app.catalog_routes import router as catalog_router
 from app.supply.inventory import router as inventory_router
 from app.supply.purchases import router as purchase_router
 from app.supply.shipments import router as shipment_router
+from app.reports.routes import router as reports_router
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inventory_router)
     app.include_router(purchase_router)
     app.include_router(shipment_router)
+    app.include_router(reports_router)
     return app
 
 

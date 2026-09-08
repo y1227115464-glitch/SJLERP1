@@ -111,3 +111,9 @@
 .supply-summary .ant-statistic-title { color: #718397; }
 .supply-summary .ant-statistic-content { color: #304863; }
 .supply-zero { color: #b77a36; }
+.report-import-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-bottom: 20px; }
+.report-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding: 24px 0; }
+.report-actions { margin: 20px 0; }
+.report-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.report-filters label { display: grid; gap: 5px; color: #526271; font-size: 12px; }
+@media (max-width: 760px) { .report-import-options { grid-template-columns: 1fr; } .report-counts { grid-template-columns: repeat(2, 1fr); } }

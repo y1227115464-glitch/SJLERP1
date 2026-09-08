@@ -57,6 +57,7 @@ export const roleLabels: Record<string, string> = { admin: '公司管理员', ma
 export function ActiveTag({ active }: { active: boolean }) { return <Tag bordered={false} color={active ? 'success' : 'default'}>{active ? '启用中' : '已停用'}</Tag>; }
 
 export const permissionLabels: Record<string, string> = {
+  'reports.view': '查看销售与广告导入数据', 'reports.import': '导入销售与广告报告',
   'workspace.view': '查看工作台', 'stores.view': '查看店铺', 'stores.manage': '管理店铺',
   'stores.export': '导出店铺', 'users.manage': '管理账号', 'audit.view': '查看操作日志',
   'jobs.view': '查看后台任务', 'jobs.run': '运行与重试任务', 'files.view': '查看与下载附件',
@@ -70,6 +71,7 @@ export const permissionLabels: Record<string, string> = {
   'inventory.view': '查看库存与流水', 'inventory.adjust': '登记期初和库存调整', 'warehouses.manage': '管理仓库档案',
 };
 export const actionLabels: Record<string, string> = {
+  'reports.preview': '预览亚马逊报表', 'reports.confirm': '确认亚马逊报表导入',
   'auth.login': '登录', 'auth.logout': '退出', 'stores.export': '导出店铺', 'stores.create': '新增店铺',
   'stores.update': '更新店铺', 'users.create': '新增账号', 'users.update': '更新账号权限',
   'users.bootstrap': '初始化管理员', 'jobs.create': '提交任务', 'jobs.retry': '重试任务',
@@ -81,4 +83,4 @@ export const actionLabels: Record<string, string> = {
   'inventory.adjust': '调整库存', 'warehouses.create': '新增仓库', 'warehouses.update': '更新仓库档案',
   'jobs.succeeded': '任务完成', 'jobs.failed': '任务失败', 'files.upload': '上传附件', 'files.download': '下载附件',
 };
-export const resourceLabels: Record<string, string> = { user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入', purchase_order: '采购单', shipment: '货件', inventory: '库存', warehouse: '仓库' };
+export const resourceLabels: Record<string, string> = { report_import: '亚马逊报表导入', user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入', purchase_order: '采购单', shipment: '货件', inventory: '库存', warehouse: '仓库' };

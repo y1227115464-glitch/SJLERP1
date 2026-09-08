@@ -17,11 +17,13 @@ const SuppliersPage = lazy(() => import('./SupplierPages').then(module => ({ def
 const QuotesPage = lazy(() => import('./QuotePages').then(module => ({ default: module.QuotesPage })));
 const PurchasesPage = lazy(() => import('./PurchasePages').then(module => ({ default: module.PurchasesPage })));
 const ShipmentsPage = lazy(() => import('./ShipmentPages').then(module => ({ default: module.ShipmentsPage })));
+const ReportImportsPage = lazy(() => import('./ReportImports').then(module => ({ default: module.ReportImportsPage })));
+const ReportRecordsPage = lazy(() => import('./ReportRecords').then(module => ({ default: module.ReportRecordsPage })));
 const InventoryPage = lazy(() => import('./InventoryPages').then(module => ({ default: module.InventoryPage })));
 
-type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes' | 'purchases' | 'shipments' | 'inventory';
-const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价', purchases: '采购记录', shipments: '发货进度', inventory: '库存管理' };
-const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view', products: 'products.view', suppliers: 'suppliers.view', quotes: 'quotes.view', purchases: 'purchases.view', shipments: 'shipments.view', inventory: 'inventory.view' };
+type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes' | 'purchases' | 'shipments' | 'inventory' | 'imports' | 'sales' | 'ads';
+const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价', purchases: '采购记录', shipments: '发货进度', inventory: '库存管理', imports: '数据导入中心', sales: '销售记录', ads: '广告数据' };
+const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view', products: 'products.view', suppliers: 'suppliers.view', quotes: 'quotes.view', purchases: 'purchases.view', shipments: 'shipments.view', inventory: 'inventory.view', imports: 'reports.view', sales: 'reports.view', ads: 'reports.view' };
 function initialPage(): Page { const hash = location.hash.slice(1); return hash in pageTitles ? hash as Page : 'workspace'; }
 
 export default function App() {
@@ -82,8 +84,10 @@ export default function App() {
       can('purchases.view') && { key: 'purchases', icon: <FileProtectOutlined />, label: '采购记录' },
       can('shipments.view') && { key: 'shipments', icon: <ContainerOutlined />, label: '发货进度' },
       can('inventory.view') && { key: 'inventory', icon: <ApartmentOutlined />, label: '库存管理' },
-      { key: 'imports-planned', icon: <ImportOutlined />, label: <span className="planned-nav">数据导入中心<span>筹建</span></span>, disabled: true },
-      { key: 'finance-planned', icon: <FileProtectOutlined />, label: <span className="planned-nav">销售与财务<span>筹建</span></span>, disabled: true },
+      can('reports.view') && { key: 'imports', icon: <ImportOutlined />, label: '数据导入中心' },
+      can('reports.view') && { key: 'sales', icon: <FileProtectOutlined />, label: '销售记录' },
+      can('reports.view') && { key: 'ads', icon: <DashboardOutlined />, label: '广告数据' },
+      { key: 'finance-planned', icon: <FileProtectOutlined />, label: <span className="planned-nav">财务核算<span>筹建</span></span>, disabled: true },
     ].filter(Boolean) },
     { type: 'group' as const, label: '协同与设置', children: [
       can('files.view') && { key: 'attachments', icon: <FolderOpenOutlined />, label: '附件中心' },
@@ -92,6 +96,7 @@ export default function App() {
       can('audit.view') && { key: 'audit', icon: <SafetyCertificateOutlined />, label: '操作日志' },
     ].filter(Boolean) },
   ];
+  const reportPage = ['imports', 'sales', 'ads'].includes(page);
   const sharedCatalog = ['products', 'suppliers', 'quotes'].includes(page);
   return <Layout className="app-layout">
     <Layout.Sider width={228} collapsedWidth={76} collapsed={collapsed} breakpoint="lg" onBreakpoint={setCollapsed} className="sidebar">
@@ -107,7 +112,7 @@ export default function App() {
         <Divider type="vertical" />
         <Dropdown trigger={['click']} menu={{ items: [{ key: 'identity', label: <div>{user.email}<br /><small>{roleLabels[user.role]}</small></div>, disabled: true }, { type: 'divider' }, { key: 'logout', label: '退出登录', icon: <LogoutOutlined />, onClick: logout }] }}><Button type="text" className="user-button"><Avatar size={30} style={{ background: '#e8edf3', color: '#315b88' }}>{user.display_name.slice(0, 1)}</Avatar><span>{user.display_name}</span></Button></Dropdown>
       </div></Layout.Header>
-      {sharedCatalog ? <div className="scope-bar catalog-scope-bar"><ApartmentOutlined /><strong>公司共享档案</strong><span>当前页面不受店铺或经营日期筛选影响</span><Tag bordered={false}>按角色授权访问</Tag></div> : <div className="scope-bar"><div className="scope-field"><ShopOutlined /><span className="filter-label">店铺</span><Select aria-label="选择店铺" value={selectedStore} onChange={setSelectedStore} style={{ minWidth: 190 }} variant="borderless" options={[{ value: 'all', label: user.role === 'admin' ? '全部店铺' : '我的全部店铺' }, ...stores.map(store => ({ value: store.id, label: `${store.name}${store.is_active ? '' : '（停用）'}` }))]} /></div><div className="scope-divider" /><div className="scope-field date-filter"><CalendarOutlined /><DatePicker.RangePicker aria-label="统计日期范围" value={range} onChange={value => { if (value?.[0] && value[1]) setRange([value[0], value[1]]); }} allowClear={false} variant="borderless" format="YYYY-MM-DD" /></div><Tooltip title="经营报表上线后使用此期间；当前账号、店铺和系统记录不按经营日期过滤。"><span className="scope-note"><QuestionCircleOutlined /> 经营期间待报表接入后生效</span></Tooltip></div>}
+      {sharedCatalog ? <div className="scope-bar catalog-scope-bar"><ApartmentOutlined /><strong>公司共享档案</strong><span>当前页面不受店铺或经营日期筛选影响</span><Tag bordered={false}>按角色授权访问</Tag></div> : <div className="scope-bar"><div className="scope-field"><ShopOutlined /><span className="filter-label">店铺</span><Select aria-label="选择店铺" value={selectedStore} onChange={setSelectedStore} style={{ minWidth: 190 }} variant="borderless" options={[{ value: 'all', label: user.role === 'admin' ? '全部店铺' : '我的全部店铺' }, ...stores.map(store => ({ value: store.id, label: `${store.name}${store.is_active ? '' : '（停用）'}` }))]} /></div><div className="scope-divider" />{reportPage ? <span className="scope-note">报表页面内可选择日期范围，默认查看全部日期</span> : <><div className="scope-field date-filter"><CalendarOutlined /><DatePicker.RangePicker aria-label="统计日期范围" value={range} onChange={value => { if (value?.[0] && value[1]) setRange([value[0], value[1]]); }} allowClear={false} variant="borderless" format="YYYY-MM-DD" /></div><Tooltip title="经营报表上线后使用此期间；当前账号、店铺和系统记录不按经营日期过滤。"><span className="scope-note"><QuestionCircleOutlined /> 经营期间待报表接入后生效</span></Tooltip></>}</div>}
       <Layout.Content className="content">
         {storeError && <Alert type="error" showIcon title="店铺列表加载失败" description={storeError} action={<Button onClick={() => void refreshStores()}>重试</Button>} style={{ marginBottom: 20 }} />}
         {(!can(pagePermissions[page]) || (page === 'quotes' && !can('costs.view'))) ? <Alert type="warning" showIcon title="暂无访问权限" description="当前账号无法查看此页面。如需调整，请联系公司管理员。" /> : <Suspense fallback={<div className="page-loading">页面加载中…</div>}>
@@ -123,6 +128,9 @@ export default function App() {
           {page === 'quotes' && <QuotesPage user={user} />}
           {page === 'purchases' && <PurchasesPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
           {page === 'shipments' && <ShipmentsPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
+          {page === 'imports' && <ReportImportsPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
+          {page === 'sales' && <ReportRecordsPage key={'sales-' + selectedStore} kind="sales" user={user} selectedStore={selectedStore} onImport={() => navigate('imports')} />}
+          {page === 'ads' && <ReportRecordsPage key={'ads-' + selectedStore} kind="ads" user={user} selectedStore={selectedStore} onImport={() => navigate('imports')} />}
           {page === 'inventory' && <InventoryPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
         </Suspense>}
         <footer className="page-footer"><span>书剑录 ERP</span><span>美国站 · FBA 经营与供应链管理</span></footer>
