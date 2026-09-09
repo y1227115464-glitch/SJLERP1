@@ -177,6 +177,7 @@ def run_apps(args):
     web_mode = 'preview' if args.built else 'dev'
     definitions = {
         'api': ([str(PYTHON), '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'], API),
+        'scheduler': ([str(PYTHON), '-m', 'app.tasks.worker'], API),
         'worker': ([str(PYTHON), '-m', 'app.worker'], API),
         'web': (['npm', 'run', web_mode, '--', '--host', web_host, '--port', '5173', '--strictPort'], ROOT / 'apps/web'),
     }
@@ -228,7 +229,7 @@ def main():
     admin.add_argument('--name', default='书剑录管理员')
     admin.add_argument('--generate', action='store_true')
     run = commands.add_parser('run')
-    run.add_argument('service', choices=['all', 'api', 'worker', 'web'], default='all', nargs='?')
+    run.add_argument('service', choices=['all', 'api', 'worker', 'scheduler', 'web'], default='all', nargs='?')
     run.add_argument('--built', action='store_true', help='通过本地预览服务运行已构建的网站')
     run.add_argument('--host', help='Web 监听地址，默认读取 SJL_WEB_HOST 或使用 127.0.0.1；局域网使用 0.0.0.0')
     args = parser.parse_args()

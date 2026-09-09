@@ -30,7 +30,7 @@ export function requestId(): string {
   const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-interface OptionRecord { id: string; name?: string; internal_sku?: string; code?: string; number?: string; supplier_name?: string }
+interface OptionRecord { id: string; name?: string; display_name?: string; internal_sku?: string; code?: string; number?: string; supplier_name?: string }
 export function RemoteSelect({ path, value, onChange, initialLabel, placeholder = '输入名称搜索并选择', disabled = false }: {
   path: string | null; value?: string; onChange?: (id: string) => void; initialLabel?: string; placeholder?: string; disabled?: boolean;
 }) {
@@ -39,7 +39,7 @@ export function RemoteSelect({ path, value, onChange, initialLabel, placeholder 
   const [selection, setSelection] = useState<{ value: string; label: string }>();
   const q = useDebouncedValue(search);
   const resource = useResource<ListResult<OptionRecord>>(open && path ? `${path}${path.includes('?') ? '&' : '?'}limit=30&q=${encodeURIComponent(q)}` : null);
-  const choices = (resource.data?.items ?? []).map(item => ({ value: item.id, label: [item.internal_sku || item.code || item.number, item.name || item.supplier_name].filter(Boolean).join(' · ') }));
+  const choices = (resource.data?.items ?? []).map(item => ({ value: item.id, label: [item.internal_sku || item.code || item.number, item.name || item.display_name || item.supplier_name].filter(Boolean).join(' · ') }));
   if (value && !choices.some(item => item.value === value)) choices.unshift({ value, label: selection?.value === value ? selection.label : initialLabel || value });
   return <Select showSearch={{ filterOption: false, onSearch: setSearch }} value={value} disabled={disabled || !path} placeholder={placeholder} loading={resource.loading}
     options={choices} onOpenChange={setOpen} onChange={id => { setSelection(choices.find(item => item.value === id)); onChange?.(id); }}

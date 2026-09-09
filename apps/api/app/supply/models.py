@@ -20,6 +20,8 @@ class Warehouse(Base):
 
 class PurchaseOrder(Base):
     __tablename__ = 'purchase_orders'
+    planned_ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ordered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     __table_args__ = (Index('ix_purchase_store_created', 'store_id', 'created_at'), Index('ix_purchase_status_expected', 'status', 'expected_date'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     number: Mapped[str] = mapped_column(String(50), unique=True)
@@ -56,6 +58,7 @@ class PurchaseLine(Base):
 
 class Shipment(Base):
     __tablename__ = 'shipments'
+    planned_ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     __table_args__ = (Index('ix_shipment_store_created', 'store_id', 'created_at'), Index('ix_shipment_status_expected', 'status', 'expected_date'),
                      CheckConstraint('(purchase_order_id IS NULL) <> (source_warehouse_id IS NULL)'),
                      CheckConstraint('source_warehouse_id IS NULL OR source_warehouse_id <> destination_warehouse_id'))

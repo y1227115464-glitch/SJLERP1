@@ -6,6 +6,8 @@ from app.models import Base
 from app.supply import models as supply_models  # Register supply tables with Base.metadata.
 from app.reports import models as report_models  # Register report tables.
 
+from app.tasks import models as task_models
+
 target_metadata = Base.metadata
 settings = Settings()
 

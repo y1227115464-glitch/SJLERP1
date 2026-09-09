@@ -7,6 +7,7 @@ from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatc
 
 hasher = PasswordHasher()
 ALL_PERMISSIONS = [
+    "tasks.view", "tasks.manage", "tasks.assign",
     "workspace.view", "stores.view", "stores.manage", "stores.export", "users.manage", "audit.view",
     "jobs.view", "jobs.run", "files.view", "files.upload", "notifications.view", "approvals.view",
     "costs.view", "finance.view",
@@ -14,7 +15,7 @@ ALL_PERMISSIONS = [
     "purchases.view", "purchases.manage", "shipments.view", "shipments.manage", "inventory.view", "inventory.adjust", "warehouses.manage",
     "reports.view", "reports.import",
 ]
-BASIC = ["workspace.view", "stores.view", "jobs.view", "jobs.run", "files.view", "files.upload", "notifications.view", "approvals.view"]
+BASIC = ["tasks.view", "tasks.manage", "workspace.view", "stores.view", "jobs.view", "jobs.run", "files.view", "files.upload", "notifications.view", "approvals.view"]
 ROLES = {
     "admin": {"label": "管理员", "permissions": ALL_PERMISSIONS},
     "manager": {"label": "经理", "permissions": BASIC + ["stores.export", "audit.view", "costs.view", "finance.view"]},
@@ -26,6 +27,8 @@ for role, config in ROLES.items():
     if role == "admin":
         continue
     config["permissions"] = list(config["permissions"]) + ["products.view"]
+    if role == "manager":
+        config["permissions"].append("tasks.assign")
     if role in {"manager", "operator"}:
         config["permissions"].append("products.manage")
     if role in {"manager", "finance", "warehouse"}:

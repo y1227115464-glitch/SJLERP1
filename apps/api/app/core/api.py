@@ -116,7 +116,7 @@ def job_out(item, user):
 
 
 def notification_out(item):
-    return serialize(item, "id title message is_read created_at")
+    return serialize(item, "id title message is_read created_at task_id")
 
 
 def attachment_out(item):

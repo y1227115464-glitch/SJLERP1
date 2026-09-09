@@ -27,6 +27,8 @@ Web 地址为 `http://127.0.0.1:5173`。首次安装需按启动文档创建管�
 
 ## 开发顺序
 
+按2026-09-09补充，优先建设工作台待办与可配置提醒：采购、分析、发货可独立操作，周一采购跟进、发货前两天/当天、每日15:00和周五分析通过规则提示。周度分组与标准步骤均可选。详见 [灵活作业与工作台待办](docs/weekly-operations-workflow.md) 和开发计划W0–W5；W0 待办、五类规则、采购/发货日期联动已实现，模板由使用者在 ERP 启用，详见 [待办使用说明](docs/task-workbench.md)。下列M1–M8保留完整建设范围。
+
 1. M1：工程基础与账号权限。
 2. M2：业务基础档案与期初数据。
 3. M3：数据导入中心及报表适配。
@@ -41,6 +43,8 @@ Web 地址为 `http://127.0.0.1:5173`。首次安装需按启动文档创建管�
 ## 文档
 
 - [ERP 功能规划与本轮验收范围](docs/erp-product-plan.md)
+- [工作台待办使用说明](docs/task-workbench.md)
+- [灵活作业、提醒规则与工作台待办设计](docs/weekly-operations-workflow.md)
 - [开发执行计划、任务清单与资料准备](docs/development-plan.md)
 - [Web ERP 技术方案](docs/erp-technical-plan.md)
 - [本地开发与启动](docs/local-development.md)

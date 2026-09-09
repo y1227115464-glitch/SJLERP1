@@ -108,7 +108,7 @@ bash scripts/local.sh status
 bash scripts/local.sh stop
 ```
 
-`start` 会启动数据库和队列、执行迁移，并在后台运行构建后的前端、API 和 worker；首次缺少 `dist/` 时自动构建。关闭终端后服务继续运行，电脑重启后重新执行 `start`。日志位于 `.local/logs/`，管理员密码位于 `.local/admin-credentials.txt`。首次部署仍需先执行前述 `create-admin --generate` 创建管理员。
+`start` 会启动数据库和队列、执行迁移，并在后台运行构建后的前端、API、worker 和 scheduler；首次缺少 `dist/` 时自动构建。关闭终端后服务继续运行，电脑重启后重新执行 `start`。日志位于 `.local/logs/`，管理员密码位于 `.local/admin-credentials.txt`。首次部署仍需先执行前述 `create-admin --generate` 创建管理员。
 
 前台运行可使用 `.venv/bin/python scripts/dev.py run --built --host 0.0.0.0`；`--host` 优先于 `.env` 的 `SJL_WEB_HOST`。API、PostgreSQL 和 Redis 继续仅监听 `127.0.0.1`，浏览器通过 Web 的同源代理访问 API。
 
@@ -160,3 +160,10 @@ npm --prefix apps/web run build
 如果登录失败，检查账号是否已创建、Web 地址是否在 `SJL_ALLOWED_ORIGINS` 内，以及本地 HTTP 是否配置 `SJL_COOKIE_SECURE=false`。正式 HTTPS 环境必须使用安全 Cookie。
 
 如数据库迁移失败，先查看错误并核对连接配置，不删除数据库来绕过迁移。如果后台任务失败，先查看任务错误与 worker 日志，修正原因后使用授权重试。
+
+
+### 工作台提醒调度
+
+`python scripts/dev.py run all` / `bash scripts/local.sh start` 现同时启动独立 `app.tasks.worker`，每10秒处理待办事件、周期实例和到期通知；单独运行可用 `.venv/bin/python scripts/dev.py run scheduler`。日志为 `.local/logs/scheduler.log`。不要用浏览器定时器或 RQ 长任务替代此进程。部署须先备份数据库，再将 Alembic 升级到 `48b7a65dc109`，随后启动新 API 和 scheduler。
+
+没有新增环境变量，也不覆盖 `.env`。规则初始为空，用户在工作台启用模板后生效。异常事件保留 `attempts/error_message/retry_at`，最长每小时重试；工作台向相关操作者提示单据待办尚未同步。已完成业务不会因为调度异常回滚。

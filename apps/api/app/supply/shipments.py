@@ -12,6 +12,8 @@ from app.supply.models import PurchaseOrder, Shipment, ShipmentLine
 from app.supply.schemas import ActionInput, EventInput, ReceiptInput, ShipmentInput, ShipmentUpdate
 from app.supply.stock import StockChange, change_stock
 
+from app.tasks.events import enqueue
+
 router = APIRouter(prefix='/api/v1/shipments')
 Reader = Annotated[User, Depends(require('shipments.view'))]
 Writer = Annotated[User, Depends(require('shipments.manage'))]
@@ -71,7 +73,9 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
         change_stock(db, user, StockChange(record.store_id, record.source_warehouse_id,
             {line.product_id: (0, line.quantity) for line in payload.lines}, 'reserve', identifier, record.number, '发货计划占用'))
     event(db, record, user, 'preparing', '创建发货计划')
+    enqueue(db, record, 'shipment', user, 'created')
     audit(db, user, 'shipments.create', 'shipment', identifier, '创建发货计划', record.store_id)
+    enqueue(db, record, 'shipment', user, 'updated')
     db.commit()
     db.expire(record)
     return shipment_detail(db, record)
@@ -90,6 +94,7 @@ def edit(identifier: str, changes: dict, db: DB, user: Writer):
         setattr(record, key, value)
     event(db, record, user, 'note', '更新物流资料与预计到货日期')
     audit(db, user, 'shipments.update', 'shipment', identifier, '更新物流资料', record.store_id)
+    enqueue(db, record, 'shipment', user, 'updated')
     db.commit()
     return shipment_detail(db, record)
 
@@ -109,6 +114,7 @@ def dispatch(identifier: str, payload: ActionInput, db: DB, user: Writer):
     record.status, record.stage, record.shipped_at = 'in_transit', 'in_transit', now()
     event(db, record, user, 'in_transit', '确认发出，进入在途')
     audit(db, user, 'shipments.dispatch', 'shipment', identifier, '确认发货', record.store_id)
+    enqueue(db, record, 'shipment', user, 'updated')
     db.commit()
     return shipment_detail(db, record)
 
@@ -128,6 +134,7 @@ def cancel(identifier: str, payload: ActionInput, db: DB, user: Writer):
     record.status, record.stage = 'cancelled', 'cancelled'
     event(db, record, user, 'cancelled', '取消待发计划')
     audit(db, user, 'shipments.cancel', 'shipment', identifier, '取消待发计划', record.store_id)
+    enqueue(db, record, 'shipment', user, 'updated')
     db.commit()
     return shipment_detail(db, record)
 
@@ -144,6 +151,7 @@ def add_event(identifier: str, payload: EventInput, db: DB, user: Writer):
     record.stage = payload.stage
     event(db, record, user, payload.stage, payload.notes)
     audit(db, user, 'shipments.event', 'shipment', identifier, '登记物流进度', record.store_id)
+    enqueue(db, record, 'shipment', user, 'updated')
     db.commit()
     return shipment_detail(db, record)
 
@@ -182,5 +190,6 @@ def receive(identifier: str, payload: ReceiptInput, db: DB, user: Writer):
     event(db, record, user, 'received' if complete else 'partially_received',
           f'本次接收 {sum(item.quantity for item in payload.lines)} 件。{payload.notes}')
     audit(db, user, 'shipments.receive', 'shipment', identifier, '登记分批接收并过账库存', record.store_id)
+    enqueue(db, record, 'shipment', user, 'updated')
     db.commit()
     return shipment_detail(db, record)

@@ -130,3 +130,9 @@
 .report-date-popup .ant-picker-panel-container { max-width: calc(100vw - 24px); max-height: calc(100vh - 100px); overflow: auto; }
 @media (max-width: 720px) { .report-date-popup .ant-picker-panels { flex-direction: column; } }
 @media (max-width: 760px) { .report-import-options { grid-template-columns: 1fr; } .report-counts { grid-template-columns: repeat(2, 1fr); } }
+
+.task-stat { width: 100%; text-align: left; background: #fff; border: 1px solid #e4e9f1; border-radius: 10px; padding: 18px 22px; cursor: pointer; color: #344054; font: inherit; }
+.task-stat:hover, .task-stat.is-selected { border-color: #5977d5; background: #f8faff; }
+.task-stat strong { display: block; font-size: 30px; line-height: 1.5; color: #182844; font-variant-numeric: tabular-nums; }
+.task-stat small { color: #697586; }
+.task-shortcuts, .task-source-card { margin-top: 24px; }

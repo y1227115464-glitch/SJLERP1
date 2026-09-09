@@ -198,6 +198,14 @@ def audits_for(user, store_id=None):
     return statement.order_by(AuditLog.created_at.desc())
 
 
+def notification_scope(user):
+    from app.tasks.common import task_scope
+    from app.tasks.models import Task, TaskNotice
+    visible = task_scope(select(Task.id), user, mine=True)
+    linked = select(TaskNotice.notification_id).where(TaskNotice.task_id.in_(visible))
+    return (Notification.user_id == user.id) & (Notification.task_id.is_(None) | Notification.id.in_(linked))
+
+
 @router.get("/workspace")
 def workspace(request: Request, db: DB, user: Annotated[User, Depends(require("workspace.view"))], store_id: str | None = None):
     if store_id:
@@ -211,7 +219,7 @@ def workspace(request: Request, db: DB, user: Annotated[User, Depends(require("w
     if store_id:
         jobs_statement = jobs_statement.where(Job.store_id == store_id)
     pending = db.scalar(jobs_statement)
-    unread = db.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == user.id, Notification.is_read.is_(False)))
+    unread = db.scalar(select(func.count()).select_from(Notification).where(notification_scope(user), Notification.is_read.is_(False)))
     return {"store_count": db.scalar(store_statement),
             "user_count": db.scalar(select(func.count()).select_from(User)) if user.role == "admin" else None,
             "pending_jobs": pending, "unread_notifications": unread,
@@ -229,12 +237,12 @@ def audit_logs(db: DB, page: Page, user: Annotated[User, Depends(require("audit.
 
 @router.get("/notifications")
 def notifications(db: DB, page: Page, user: Annotated[User, Depends(require("notifications.view"))]):
-    return paginated(db, select(Notification).where(Notification.user_id == user.id).order_by(Notification.created_at.desc()), page, notification_out)
+    return paginated(db, select(Notification).where(notification_scope(user)).order_by(Notification.created_at.desc()), page, notification_out)
 
 
 @router.post("/notifications/{notification_id}/read")
 def read_notification(notification_id: str, db: DB, user: Annotated[User, Depends(require("notifications.view"))]):
-    record = db.scalar(select(Notification).where(Notification.id == notification_id, Notification.user_id == user.id))
+    record = db.scalar(select(Notification).where(Notification.id == notification_id, notification_scope(user)))
     if not record:
         fail(404, "not_found", "通知不存在或无权访问")
     record.is_read = True

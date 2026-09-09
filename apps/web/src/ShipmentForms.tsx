@@ -7,7 +7,7 @@ import { activeWarehousesPath, options, QuantityInput, RemoteSelect, requestId, 
 import type { PurchaseOrder, Shipment } from './supply-types';
 import type { Store, User } from './types';
 
-interface ShipmentValues { store_id: string; purchase_order_id?: string; source_warehouse_id?: string; destination_warehouse_id: string; carrier?: string; tracking_number?: string; amazon_shipment_id?: string; expected_date?: string; notes?: string; lines: { product_id: string; quantity: number }[] }
+interface ShipmentValues { store_id: string; purchase_order_id?: string; source_warehouse_id?: string; destination_warehouse_id: string; carrier?: string; tracking_number?: string; amazon_shipment_id?: string; expected_date?: string; planned_ship_date?: string; notes?: string; lines: { product_id: string; quantity: number }[] }
 export function ShipmentEditor({ user, stores, selectedStore, purchase, onClose, onSaved }: { user: User; stores: Store[]; selectedStore: string; purchase?: PurchaseOrder; onClose: () => void; onSaved: () => void }) {
   const [form] = Form.useForm<ShipmentValues>();
   const [mode, setMode] = useState(purchase ? 'supplier' : 'warehouse');
@@ -25,7 +25,7 @@ export function ShipmentEditor({ user, stores, selectedStore, purchase, onClose,
     const body = { request_id: token, store_id: values.store_id, destination_warehouse_id: values.destination_warehouse_id,
       ...(mode === 'supplier' ? { purchase_order_id: values.purchase_order_id } : { source_warehouse_id: values.source_warehouse_id }),
       carrier: values.carrier || '', tracking_number: values.tracking_number || '', amazon_shipment_id: values.amazon_shipment_id || '',
-      expected_date: values.expected_date || null, notes: values.notes || '', lines: values.lines };
+      expected_date: values.expected_date || null, planned_ship_date: values.planned_ship_date || null, notes: values.notes || '', lines: values.lines };
     try { await api('/shipments', { method: 'POST', body }); onSaved(); }
     catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
   };
@@ -51,14 +51,14 @@ export function ShipmentEditor({ user, stores, selectedStore, purchase, onClose,
 
 function LogisticsFields() {
   return <><Row gutter={16} style={{ marginTop: 20 }}><Col span={12}><Form.Item name="carrier" label="承运商 / 货代"><Input maxLength={120} /></Form.Item></Col><Col span={12}><Form.Item name="tracking_number" label="物流运单号"><Input maxLength={120} /></Form.Item></Col></Row>
-    <Row gutter={16}><Col span={12}><Form.Item name="amazon_shipment_id" label="Amazon Shipment ID"><Input maxLength={120} /></Form.Item></Col><Col span={12}><Form.Item name="expected_date" label="预计到货日期"><Input type="date" /></Form.Item></Col></Row><Form.Item name="notes" label="物流备注"><Input.TextArea rows={2} maxLength={5000} /></Form.Item></>;
+    <Row gutter={16}><Col span={12}><Form.Item name="amazon_shipment_id" label="Amazon Shipment ID"><Input maxLength={120} /></Form.Item></Col><Col span={12}><Form.Item name="expected_date" label="预计到货日期"><Input type="date" /></Form.Item></Col></Row><Form.Item name="planned_ship_date" label="预计发货日" extra="关联采购单时，留空表示跟随采购单的预计发货日。"><Input type="date" /></Form.Item><Form.Item name="notes" label="物流备注"><Input.TextArea rows={2} maxLength={5000} /></Form.Item></>;
 }
 
 export function LogisticsEditor({ shipment, onClose, onSaved }: { shipment: Shipment; onClose: () => void; onSaved: () => void }) {
   const [form] = Form.useForm(); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
   return <Modal open title="维护物流资料" onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving}>
-    <ErrorNotice error={error} /><Form form={form} layout="vertical" initialValues={{ carrier: shipment.carrier, tracking_number: shipment.tracking_number, amazon_shipment_id: shipment.amazon_shipment_id, expected_date: shipment.expected_date || '', notes: shipment.notes }} onFinish={async values => {
-      setSaving(true); setError(''); try { await api(`/shipments/${shipment.id}`, { method: 'PATCH', body: { ...values, expected_date: values.expected_date || null } }); onSaved(); }
+    <ErrorNotice error={error} /><Form form={form} layout="vertical" initialValues={{ carrier: shipment.carrier, tracking_number: shipment.tracking_number, amazon_shipment_id: shipment.amazon_shipment_id, expected_date: shipment.expected_date || '', planned_ship_date: shipment.planned_ship_date || '', notes: shipment.notes }} onFinish={async values => {
+      setSaving(true); setError(''); try { await api(`/shipments/${shipment.id}`, { method: 'PATCH', body: { ...values, expected_date: values.expected_date || null, planned_ship_date: values.planned_ship_date || null } }); onSaved(); }
       catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
     }}><LogisticsFields /></Form>
   </Modal>;

@@ -12,7 +12,7 @@ export interface Audit {
   id: string; action: string; resource_type: string; resource_id: string | null;
   actor_name: string; summary: string; created_at: string;
 }
-export interface Notification { id: string; title: string; message: string; is_read: boolean; created_at: string }
+export interface Notification { id: string; task_id: string | null; title: string; message: string; is_read: boolean; created_at: string }
 export interface Job {
   id: string; kind: string; status: 'queued' | 'running' | 'succeeded' | 'failed';
   store_id: string | null; created_at: string; started_at: string | null; finished_at: string | null;

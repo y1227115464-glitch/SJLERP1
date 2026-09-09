@@ -31,6 +31,7 @@ class PurchaseInput(Input):
     supplier_id: Identifier
     order_date: date
     expected_date: date | None = None
+    planned_ship_date: date | None = Field(default=None, ge=date(1901, 1, 1), le=date(2199, 12, 31))
     currency: Currency = 'CNY'
     payment_terms: str = Field(default='', max_length=2000)
     notes: str = Field(default='', max_length=5000)
@@ -43,6 +44,10 @@ class PurchaseInput(Input):
         if self.expected_date and self.expected_date < self.order_date:
             raise ValueError('预计到货不能早于采购日期')
         return self
+
+
+class PurchaseCreate(PurchaseInput):
+    already_ordered: bool = False
 
 
 class ShipmentItem(Input):
@@ -60,6 +65,7 @@ class ShipmentInput(Input):
     tracking_number: str = Field(default='', max_length=120)
     amazon_shipment_id: str = Field(default='', max_length=120)
     expected_date: date | None = None
+    planned_ship_date: date | None = Field(default=None, ge=date(1901, 1, 1), le=date(2199, 12, 31))
     notes: str = Field(default='', max_length=5000)
     lines: list[ShipmentItem] = Field(min_length=1, max_length=100)
 
@@ -79,6 +85,7 @@ class ShipmentUpdate(Input):
     tracking_number: str = Field(default='', max_length=120)
     amazon_shipment_id: str = Field(default='', max_length=120)
     expected_date: date | None = None
+    planned_ship_date: date | None = Field(default=None, ge=date(1901, 1, 1), le=date(2199, 12, 31))
     notes: str = Field(default='', max_length=5000)
 
 
@@ -123,3 +130,8 @@ class AdjustmentInput(Input):
         if self.quantity == 0 or (self.kind == 'opening' and self.quantity < 0):
             raise ValueError('变动数量不能为零，期初数量必须为正数')
         return self
+
+
+class PurchaseScheduleInput(Input):
+    request_id: UUID
+    planned_ship_date: date | None = Field(default=None, ge=date(1901, 1, 1), le=date(2199, 12, 31))
