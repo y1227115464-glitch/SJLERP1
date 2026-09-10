@@ -97,6 +97,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(router)
     app.include_router(catalog_router)
+    from app.product_scope import router as product_scope_router
+    app.include_router(product_scope_router)
     app.include_router(inventory_router)
     app.include_router(purchase_router)
     app.include_router(shipment_router)

@@ -16,6 +16,7 @@ from app.supply.defaults import resolve_warehouse
 from app.supply.line_changes import ShipmentLineChange
 from app.supply.shipment_lines import amend_shipment
 
+from app.supply.merge import MergeInput, merge
 from app.tasks.events import enqueue
 
 router = APIRouter(prefix='/api/v1/shipments')
@@ -35,6 +36,11 @@ def listing(db: DB, page: Page, user: Reader, store_id: str | None = None, q: st
     if purchase_order_id:
         statement = statement.where(Shipment.purchase_order_id == purchase_order_id)
     return paginated(db, statement.order_by(Shipment.created_at.desc(), Shipment.id), page, shipment_out)
+
+
+@router.post('/merge')
+def merge_shipments(payload: MergeInput, db: DB, user: Writer):
+    return merge(payload, db, user)
 
 
 @router.get('/{identifier}')

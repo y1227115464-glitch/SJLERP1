@@ -1,3 +1,4 @@
+import { ProductStores } from './ProductStores';
 import { ProductEditor } from './ProductEditor';
 import { useState } from 'react';
 import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Upload } from 'antd';
@@ -24,7 +25,7 @@ export function ProductsPage({ user }: { user: User }) {
   const refresh = () => { resource.reload(); meta.reload(); setDetailVersion(version => version + 1); };
   return <>
     <PageHeading eyebrow="PRODUCT CATALOG" title="商品管理" description="维护公司商品档案、参考标识与图片，逐项核对来源资料。" extra={canManage && <Space wrap><Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入商品 CSV</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新增商品</Button></Space>} />
-    <SharedCatalogNotice description="商品为公司共享档案，不按店铺或经营日期筛选。ASIN / FNSKU 暂作来源参考，尚未建立店铺 Seller SKU 映射。" />
+    <SharedCatalogNotice description="商品为公司共享档案；可在详情的「售卖店铺」中维护各店铺的售卖范围，供采购选择使用。" />
     <ErrorNotice error={meta.error} retry={meta.reload} />
     <div className="summary-strip catalog-summary"><div><span>全部商品</span><strong>{meta.data?.total ?? '—'}</strong><small>项</small></div><div><span>启用中</span><strong>{meta.data?.active ?? '—'}</strong><small>项</small></div><div><span>待核对</span><strong>{meta.data?.needs_review ?? '—'}</strong><small>项</small></div><p>售价与采购报价、核算成本分别维护。</p></div>
     <ErrorNotice error={resource.error} retry={resource.reload} />
@@ -67,6 +68,7 @@ function ProductDetails({ id, canManage, onClose, onEdit }: { id: string; canMan
           { key: 'amazon', label: '亚马逊链接', span: 2, children: safeSourceUrl(product.amazon_url) ? <a href={product.amazon_url} target="_blank" rel="noopener noreferrer">打开来源商品页面 <LinkOutlined /></a> : '未填写' },
           { key: 'notes', label: '内部备注', children: <span className="catalog-prewrap">{product.notes || '—'}</span>, span: 2 },
         ]} /><p className="catalog-field-help">售价仅用于商品参考；采购报价与核算成本单独管理。参考标识尚未绑定店铺 Seller SKU。</p>{urls.length > 0 && <div className="product-gallery">{urls.map(url => <ProductImage key={url} url={url} name={product.name} size={140} preview />)}</div>}</> },
+        { key: 'stores', label: '售卖店铺', children: <ProductStores productId={id} canManage={canManage} /> },
         { key: 'listing', label: '标题与描述', children: <div className="catalog-copy"><h3>商品标题</h3><p>{product.title || '未填写'}</p><h3>卖点</h3>{product.bullet_points.length ? <ul>{product.bullet_points.map((point, index) => <li key={index}>{point}</li>)}</ul> : <p className="subtle-text">未填写卖点</p>}<h3>商品描述</h3><p className="catalog-prewrap">{product.description || '未填写'}</p></div> },
         { key: 'source', label: '导入来源与原值', children: <><Alert className="page-notice" type="info" showIcon title="以下为来源文件原始字段" description="stock、monthly_sales 等字段仅为历史来源值，不代表 ERP 当前库存或指定期间销量。价格原值的单位以导入时选项及核对记录为准。" /><Descriptions size="small" column={1} items={[{ key: 'source', label: '来源文件', children: product.source_filename || '手工建立' }, { key: 'row', label: '文件行号', children: product.source_row ?? '—' }, { key: 'created', label: '建立时间', children: dateTime(product.created_at) }, { key: 'updated', label: '最后更新', children: dateTime(product.updated_at) }]} />{product.source_data ? <div className="source-data-table">{Object.entries(product.source_data).map(([key, value]) => <div className="source-data-row" key={key}><strong>{key}</strong><span className="catalog-prewrap">{typeof value === 'string' ? value : JSON.stringify(value, null, 2)}</span></div>)}</div> : <EmptyState text="此商品为手工建立，暂无原始导入字段。" />}</> },
       ]} />

@@ -8,6 +8,8 @@ from app.catalog_schemas import ImportConfirm, ProductCreate, QuoteCreate, Suppl
 from app.core.api import DB, Page, audit, fail, paginated, require, serialize
 from app.core.security import has_permission
 from app.models import Product, Supplier, SupplierQuote, User
+from app.product_scope import store_condition, supplier_condition
+from app.core.api import require_store
 
 router = APIRouter(prefix="/api/v1")
 ProductReader = Annotated[User, Depends(require("products.view"))]
@@ -92,8 +94,14 @@ def product_meta(db: DB, user: ProductReader):
 
 @router.get("/products")
 def products(db: DB, page: Page, user: ProductReader, q: str = "", brand: str | None = None,
-             is_active: bool | None = None, needs_review: bool | None = None):
+             is_active: bool | None = None, needs_review: bool | None = None,
+             store_id: str | None = None, supplier_id: str | None = None):
     statement = select(Product)
+    if store_id is not None:
+        require_store(db, user, store_id)
+        statement = statement.where(store_condition(store_id))
+    if supplier_id is not None:
+        statement = statement.where(supplier_condition(supplier_id))
     if q.strip():
         term = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         statement = statement.where(or_(*(getattr(Product, key).ilike(term, escape="\\") for key in ["internal_sku", "name", "name_zh", "asin", "fnsku", "brand"])))

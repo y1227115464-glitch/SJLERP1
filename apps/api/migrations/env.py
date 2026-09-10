@@ -7,6 +7,8 @@ from app.supply import models as supply_models  # Register supply tables with Ba
 from app.reports import models as report_models  # Register report tables.
 
 from app.tasks import models as task_models
+from app.product_scope import ProductStore
+from app.supply.finance import PurchaseFinanceEvent
 
 target_metadata = Base.metadata
 settings = Settings()

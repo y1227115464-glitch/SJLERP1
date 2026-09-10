@@ -98,7 +98,7 @@ def overdue(record):
 
 
 def purchase_out(record, user):
-    result = values(record, 'id number store_id supplier_id status order_date expected_date planned_ship_date ordered_at notes created_at updated_at')
+    result = values(record, 'id number store_id supplier_id status payment_status invoice_status order_date expected_date planned_ship_date ordered_at notes created_at updated_at')
     result.update(store_name=record.store.name, supplier_name=record.supplier.name, overdue=overdue(record), lines_version=lines_version(record))
     fields = 'id product_id product_name internal_sku quantity received_quantity cancelled_quantity'
     costs = has_permission(user, 'costs.view')
@@ -115,11 +115,12 @@ def purchase_out(record, user):
             context.prec = 40
             total = sum((line.quantity * line.unit_price for line in record.lines), Decimal(0))
         result.update(currency=record.currency, payment_terms=record.payment_terms, total_amount=format(total, '.4f'))
+        result.update(values(record, 'finance_notes finance_updated_at'))
     return result
 
 
 def shipment_out(record):
-    result = values(record, 'id number store_id purchase_order_id source_warehouse_id destination_warehouse_id status stage carrier tracking_number amazon_shipment_id expected_date planned_ship_date notes shipped_at received_at created_at updated_at')
+    result = values(record, 'id number store_id merged_into_id purchase_order_id source_warehouse_id destination_warehouse_id status stage carrier tracking_number amazon_shipment_id expected_date planned_ship_date notes shipped_at received_at created_at updated_at')
     result.update(store_name=record.store.name, source_name=record.source.name if record.source else '供应商',
                   destination_name=record.destination.name, destination_kind=record.destination.kind, overdue=overdue(record), lines_version=lines_version(record))
     result['lines'] = [{**values(line, 'id product_id product_name internal_sku quantity received_quantity units_per_carton'),

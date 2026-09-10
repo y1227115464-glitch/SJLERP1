@@ -1,5 +1,6 @@
 from app.core.api import audit, fail
 from app.models import now
+from app.product_scope import purchase_products
 from app.supply.common import active_products, active_store, allocations, operation, purchase_out, purchase_status, scoped_record
 from app.supply.line_changes import check_version
 from app.supply.models import PurchaseLine, PurchaseOrder
@@ -20,7 +21,7 @@ def amend_purchase(identifier, payload, db, user):
     requested = {line.product_id: line for line in payload.lines}
     if existing.keys() - requested.keys():
         fail(409, 'purchase_line_required', '已提交采购单须保留原商品行，可调整数量或追加商品')
-    products = active_products(db, requested.keys() - existing.keys())
+    products = purchase_products(db, requested.keys() - existing.keys(), record.store_id, record.supplier_id)
     allocated = allocations(db, identifier)
     notes = []
     for position, item in enumerate(payload.lines):

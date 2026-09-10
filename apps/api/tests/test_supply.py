@@ -26,7 +26,16 @@ def fixtures(system):
     supplier = post(client, '/suppliers', headers, {'code': 'SUPPLY', 'name': '供应链测试供应商'})
     source = post(client, '/warehouses', headers, {'code': 'CN', 'name': '国内测试仓', 'kind': 'domestic'})
     target = post(client, '/warehouses', headers, {'code': 'FBA', 'name': 'FBA测试仓', 'kind': 'fba'})
+    allow_purchase(system, client, headers, product, supplier)
     return client, headers, product, supplier, source, target
+
+
+def allow_purchase(system, client, headers, product, supplier):
+    response = client.put(f"/api/v1/products/{product['id']}/stores/{system['ids']['a']}",
+        headers=headers, json={'is_active': True})
+    assert response.status_code == 200, response.text
+    post(client, '/supplier-quotes', headers, {'supplier_id': supplier['id'], 'label': '供货关联',
+        'product_ids': [product['id']], 'tiers': [{'min_quantity': 1, 'unit_price': '1'}]})
 
 
 def purchase(system, client, headers, product, supplier, quantity=100):

@@ -31,6 +31,10 @@ class PurchaseOrder(Base):
     order_date: Mapped[date] = mapped_column(Date)
     expected_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default='CNY')
+    payment_status: Mapped[str] = mapped_column(String(20), default='unpaid')
+    invoice_status: Mapped[str] = mapped_column(String(20), default='pending')
+    finance_notes: Mapped[str] = mapped_column(Text, default='')
+    finance_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     payment_terms: Mapped[str] = mapped_column(String(2000), default='')
     notes: Mapped[str] = mapped_column(Text, default='')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -59,6 +63,7 @@ class PurchaseLine(Base):
 
 class Shipment(Base):
     __tablename__ = 'shipments'
+    merged_into_id: Mapped[str | None] = mapped_column(ForeignKey('shipments.id'), nullable=True)
     planned_ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     __table_args__ = (Index('ix_shipment_store_created', 'store_id', 'created_at'), Index('ix_shipment_status_expected', 'status', 'expected_date'),
                      CheckConstraint('(purchase_order_id IS NULL) <> (source_warehouse_id IS NULL)'),

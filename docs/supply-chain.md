@@ -116,3 +116,16 @@ W0 已实现独立工作台待办和提醒规则，操作说明见 [工作台待
 修改内容和可选说明写入审计；发货完整差异保留在物流跟进中，源仓变化新增库存流水。请求重试不会重复记账；编辑期间单据被其他人修改或发生收货，保存会提示刷新，避免覆盖新记录。
 
 内部接口：`PATCH /api/v1/purchase-orders/{id}/lines`、`PATCH /api/v1/shipments/{id}/lines`，均接受 `request_id`、`expected_version`（使用单据返回的 `lines_version`）、`lines` 和可选 `reason`；使用原有会话、CSRF、店铺和操作权限。采购行输入 `product_id/quantity`，新增行还需 `unit_price`；发货行输入 `product_id/quantity/units_per_carton`。无数据库结构迁移。
+
+## 采购商品范围、货件合并及付款发票跟进（2026-09-10）
+
+采购前在「商品管理 → 详情 → 售卖店铺」维护售卖范围，并在采购报价中关联供应商与商品。采购候选仅取当前店铺售卖且当前供应商启用报价关联的启用商品。历史商品不自动分配到全部店铺。
+
+发货页可跨页勾选2–100张待发货件，合并至第一张选中货件。要求店铺、来源（采购单或发货仓）、收货仓一致；同商品箱规一致；有值的物流资料及预计日期无冲突。合并只汇总数量，不改变库存占用/采购分配总量；其余货件标记取消并保存 `merged_into_id`，明细和历史保留。目标货件仍可照常发货、收货或取消。
+
+- `POST /api/v1/shipments/merge`：`{request_id,shipment_ids:[id1,id2],expected_versions:{id1:lines_version1,id2:lines_version2}}`，需 `shipments.manage` 与全部所选店铺权限。返回目标货件；重复请求幂等，过期版本/状态或路线冲突409，无权404，非法输入422。
+- `POST /api/v1/purchase-orders/{id}/finance`：`{request_id,payment_status,invoice_status,notes}`，需 `purchases.manage` 和该采购店铺权限。付款值 `unpaid/partial/paid`，发票值 `pending/partial/received/not_required`；备注最多2000字。所有履约状态均可跟进，不操作真实资金/发票。
+- 采购列表/详情增加两个跟进状态；支持 `payment_status` 与 `invoice_status` 列表筛选。具备 `costs.view` 的用户可看 `finance_notes`、`finance_updated_at` 以及详情最近50条 `finance_history`（状态、备注、操作人、时间）。历史不可直接编辑。
+- 既有采购单初始化未付款/未收票且最后跟进为空，页面提示人工核实；默认值不是历史结算结论。
+
+上线先备份并执行 Alembic 迁移 `61cd940be820`，然后发布 API、Web 及相关 worker。此轮交付未改动业务数据库。

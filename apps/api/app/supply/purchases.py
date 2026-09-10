@@ -12,6 +12,8 @@ from app.supply.schemas import PurchaseInput, PurchaseCreate, PurchaseScheduleIn
 from app.supply.line_changes import PurchaseLineChange
 from app.supply.purchase_lines import amend_purchase
 
+from app.product_scope import purchase_products
+from app.supply.finance import FinanceInput, PaymentStatus, InvoiceStatus, followup, history
 from app.tasks.events import enqueue
 from app.tasks.schemas import ProgressInput
 
@@ -25,7 +27,7 @@ def apply_purchase(db, record, payload, user):
     supplier = db.get(Supplier, payload.supplier_id)
     if not supplier or not supplier.is_active:
         fail(422, 'invalid_supplier', '请选择启用中的供应商')
-    products = active_products(db, [line.product_id for line in payload.lines])
+    products = purchase_products(db, [line.product_id for line in payload.lines], payload.store_id, payload.supplier_id)
     for key, value in payload.model_dump(exclude={'request_id', 'lines', 'already_ordered'}).items():
         setattr(record, key, value)
     # Flush removed draft rows before inserting replacements under the unique key.
@@ -39,12 +41,16 @@ def apply_purchase(db, record, payload, user):
 @router.get('')
 def list_orders(db: DB, page: Page, user: Reader, store_id: str | None = None, q: str = '',
                 status: Literal['draft', 'ordered', 'partially_received', 'received', 'cancelled', 'closed'] | None = None,
-                shippable: bool = False):
+                shippable: bool = False, payment_status: PaymentStatus | None = None, invoice_status: InvoiceStatus | None = None):
     statement = scoped(select(PurchaseOrder), user, PurchaseOrder.store_id, store_id)
     if q.strip():
         statement = statement.where(PurchaseOrder.number.ilike('%'+q.strip()+'%'))
     if status:
         statement = statement.where(PurchaseOrder.status == status)
+    if payment_status:
+        statement = statement.where(PurchaseOrder.payment_status == payment_status)
+    if invoice_status:
+        statement = statement.where(PurchaseOrder.invoice_status == invoice_status)
     if shippable:
         allocated = select(func.coalesce(func.sum(ShipmentLine.quantity - ShipmentLine.received_quantity), 0)).join(
             Shipment, Shipment.id == ShipmentLine.shipment_id).where(Shipment.purchase_order_id == PurchaseLine.purchase_order_id,
@@ -59,6 +65,7 @@ def list_orders(db: DB, page: Page, user: Reader, store_id: str | None = None, q
 def detail(identifier: str, db: DB, user: Reader):
     record = scoped_record(db, PurchaseOrder, identifier, user)
     result = purchase_out(record, user)
+    result['finance_history'] = history(db, identifier, user)
     from app.tasks.models import SourceEvent
     progress = db.execute(select(SourceEvent.created_at, SourceEvent.data, User.display_name).join(User, User.id == SourceEvent.actor_id)
         .where(SourceEvent.source_kind == 'purchase', SourceEvent.source_id == identifier, SourceEvent.kind == 'production')
@@ -123,6 +130,7 @@ def confirm(identifier: str, db: DB, user: Writer):
     if record.status != 'draft':
         fail(409, 'invalid_status', '只有草稿可以提交')
     active_store(db, user, record.store_id)
+    purchase_products(db, [line.product_id for line in record.lines], record.store_id, record.supplier_id)
     record.status = 'ordered'
     record.ordered_at = now()
     audit(db, user, 'purchases.confirm', 'purchase_order', identifier, '登记已向供应商下单', record.store_id)
@@ -178,3 +186,8 @@ def production(identifier: str, payload: ProgressInput, db: DB, user: Writer):
         audit(db, user, 'purchases.production', 'purchase_order', identifier, payload.notes, record.store_id)
     db.commit()
     return purchase_out(record, user)
+
+
+@router.post('/{identifier}/finance')
+def update_finance(identifier: str, payload: FinanceInput, db: DB, user: Writer):
+    return followup(identifier, payload, db, user)

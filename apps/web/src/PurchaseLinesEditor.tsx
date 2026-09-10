@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Col, Form, Input, InputNumber, Modal, Row } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { api, errorText } from './api';
+import { queryPath } from './CatalogShared';
 import { ErrorNotice } from './common';
 import { QuantityInput, RemoteSelect, requestId, required } from './SupplyShared';
 import type { PurchaseOrder } from './supply-types';
@@ -33,7 +34,7 @@ export function PurchaseLinesEditor({ order, onClose, onSaved }: { order: Purcha
           const minimum = original ? Math.max(1, original.received_quantity + original.cancelled_quantity + (original.allocated_quantity || 0)) : 1;
           return <Row key={field.key} gutter={12} align="top">
             <Col span={12}><Form.Item name={[field.name, 'product_id']} label="商品 / SKU" rules={required}>
-              <RemoteSelect path="/products?is_active=true" disabled={!!original} initialLabel={original ? `${original.internal_sku} · ${original.product_name_zh || original.product_name}` : undefined} />
+              <RemoteSelect path={queryPath('/products', { is_active: true, store_id: order.store_id, supplier_id: order.supplier_id })} disabled={!!original} initialLabel={original ? `${original.internal_sku} · ${original.product_name_zh || original.product_name}` : undefined} />
             </Form.Item></Col>
             <Col span={5}><Form.Item name={[field.name, 'quantity']} label="采购数量" extra={original ? `至少 ${minimum} 件` : undefined} rules={required}><QuantityInput min={minimum} /></Form.Item></Col>
             <Col span={5}>{original ? <Form.Item label={`原单价（${order.currency}）`}><Input value={original.unit_price} readOnly /></Form.Item> : <Form.Item name={[field.name, 'unit_price']} label={`单价（${order.currency}）`} rules={required}><InputNumber stringMode min="0" max="99999999999999.9999" precision={4} style={{ width: '100%' }} /></Form.Item>}</Col>

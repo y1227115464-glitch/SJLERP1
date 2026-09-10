@@ -3,7 +3,7 @@ from uuid import uuid4
 import pytest
 
 from conftest import login
-from test_supply import balance, fixtures, post, purchase, receive, shipment
+from test_supply import allow_purchase, balance, fixtures, post, purchase, receive, shipment
 
 
 def amend(client, kind, record, lines, *, status=200, body=None):
@@ -18,6 +18,7 @@ def test_submitted_purchase_can_change_quantities_and_add_products(system):
     client, headers, product, supplier, _, target = fixtures(system)
     order = purchase(system, client, headers, product, supplier, 20)
     second = post(client, '/products', headers, {'internal_sku': 'ADD', 'name': '追加商品', 'units_per_carton': 1})
+    allow_purchase(system, client, headers, second, supplier)
     inbound = shipment(system, client, headers, product, target, 8, order=order)
     original_id = order['lines'][0]['id']
     changed, body = amend(client, 'purchase-orders', order, [
@@ -41,6 +42,7 @@ def test_supplier_shipment_can_change_products_and_reallocate(system):
     client, headers, product, supplier, _, target = fixtures(system)
     second = post(client, '/products', headers, {'internal_sku': 'OTHER', 'name': '替换商品', 'units_per_carton': 2})
     order = purchase(system, client, headers, product, supplier, 20)
+    allow_purchase(system, client, headers, second, supplier)
     order, _ = amend(client, 'purchase-orders', order, [
         {'product_id': product['id'], 'quantity': 20}, {'product_id': second['id'], 'quantity': 12, 'unit_price': '1'}])
     headers = login(client)

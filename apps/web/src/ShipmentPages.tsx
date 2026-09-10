@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { App as AntApp, Button, Card, Descriptions, Drawer, Input, Progress, Select, Space, Table, Tag, Timeline } from 'antd';
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { api, errorText } from './api';
 import { dateTime, EmptyState, ErrorNotice, PageHeading, usePagedList, useResource } from './common';
 import { queryPath, useDebouncedValue } from './CatalogShared';
 import { options, requestId, shipmentStatuses, stageLabels, StatusTag, storeParam } from './SupplyShared';
+import { ShipmentMerge } from './ShipmentMerge';
 import { ShipmentLinesEditor } from './ShipmentLinesEditor';
 import { ShipmentPackingEditor } from './ShipmentPackingEditor';
 import { EventEditor, LogisticsEditor, ReceiptEditor, ShipmentEditor } from './ShipmentForms';
@@ -14,14 +15,22 @@ import type { Store, User } from './types';
 
 export function ShipmentsPage({ user, stores, selectedStore }: { user: User; stores: Store[]; selectedStore: string }) {
   const [q, setQ] = useState(''); const [status, setStatus] = useState<string>(); const query = useDebouncedValue(q);
-  const resource = usePagedList<Shipment>(queryPath('/shipments', { store_id: storeParam(selectedStore), q: query, status }));
+  const listPath = queryPath('/shipments', { store_id: storeParam(selectedStore), q: query, status });
+  const resource = usePagedList<Shipment>(listPath);
+  const [selection, setSelection] = useState<{ path: string; rows: Shipment[] }>({ path: listPath, rows: [] });
+  const [merging, setMerging] = useState<Shipment[]>();
+  useEffect(() => { setSelection({ path: listPath, rows: [] }); setMerging(undefined); }, [listPath]);
+  const currentRows = new Map((resource.data?.items || []).map(row => [row.id, row]));
+  const selected = selection.path === listPath ? selection.rows.map(row => currentRows.get(row.id) || row).filter(row => row.status === 'planned') : [];
+  const canManage = user.permissions.includes('shipments.manage');
   const [creating, setCreating] = useState(false); const [detail, setDetail] = useLinkedDetail(); const [version, setVersion] = useState(0);
   return <><PageHeading eyebrow="SHIPMENT TRACKING" title="发货进度" description="跟进供应商来货与仓库发货，记录运单、运输节点、延期原因和分批接收。" extra={user.permissions.includes('shipments.manage') && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>新建发货计划</Button>} />
     <ErrorNotice error={resource.error} retry={resource.reload} />
     <Card className="section-card" title="货件跟进" extra={<Button icon={<ReloadOutlined />} onClick={resource.reload}>刷新</Button>}>
       <div className="catalog-filter-bar"><Input className="catalog-search" prefix={<SearchOutlined />} placeholder="搜索货件号、物流运单或 Shipment ID" value={q} onChange={event => setQ(event.target.value)} allowClear /><Select placeholder="全部状态" value={status} onChange={setStatus} allowClear options={options(shipmentStatuses)} style={{ width: 170 }} /></div>
-      <Table<Shipment> rowKey="id" dataSource={resource.data?.items ?? []} loading={resource.loading} pagination={resource.pagination} scroll={{ x: 1250 }} locale={{ emptyText: <EmptyState text="暂无货件。可从采购单安排供应商发货，或为已有库存建立仓库发货计划。" /> }} columns={[
-        { title: '货件 / 店铺', width: 250, render: (_, item) => <><button className="catalog-title-link" onClick={() => setDetail(item.id)}>{item.number}</button><small className="cell-secondary">{item.store_name}</small></> },
+      {canManage && <Space style={{ marginBottom: 16 }}><Button disabled={selected.length < 2 || selected.length > 100} onClick={() => setMerging(selected)}>合并所选待发货件（{selected.length}）</Button><span>选择同店铺、同来源、同收货仓的待发货件</span></Space>}
+      <Table<Shipment> rowSelection={canManage ? { preserveSelectedRowKeys: true, selectedRowKeys: selected.map(row => row.id), onChange: (keys, rows) => setSelection({ path: listPath, rows: keys.map(key => rows.find(row => row?.id === key) || selected.find(row => row.id === key)).filter((row): row is Shipment => !!row) }), getCheckboxProps: row => ({ disabled: row.status !== 'planned' || (selected.length >= 100 && !selected.some(item => item.id === row.id)) }) } : undefined} rowKey="id" dataSource={resource.data?.items ?? []} loading={resource.loading} pagination={resource.pagination} scroll={{ x: 1250 }} locale={{ emptyText: <EmptyState text="暂无货件。可从采购单安排供应商发货，或为已有库存建立仓库发货计划。" /> }} columns={[
+        { title: '货件 / 店铺', width: 250, render: (_, item) => <><button className="catalog-title-link" onClick={() => setDetail(item.id)}>{item.number}</button>{item.merged_into_id && <small className="cell-secondary">已合并</small>}<small className="cell-secondary">{item.store_name}</small></> },
         { title: '发货 → 接收', width: 190, render: (_, item) => <>{item.source_name}<small className="cell-secondary">→ {item.destination_name}</small></> },
         { title: '运单 / 承运商', width: 170, render: (_, item) => <>{item.tracking_number || '尚未登记'}<small className="cell-secondary">{item.carrier || '承运商未填写'}</small></> },
         { title: '物流节点', width: 130, render: (_, item) => <Tag color={item.stage === 'delayed' ? 'error' : 'default'}>{stageLabels[item.stage]}</Tag> },
@@ -32,6 +41,7 @@ export function ShipmentsPage({ user, stores, selectedStore }: { user: User; sto
         { title: '操作', width: 90, render: (_, item) => <Button type="link" onClick={() => setDetail(item.id)}>跟进</Button> },
       ]} />
     </Card>
+    {merging && <ShipmentMerge records={merging} onClose={() => setMerging(undefined)} onMerged={id => { setMerging(undefined); setSelection({ path: listPath, rows: [] }); resource.reload(); setDetail(id); setVersion(value => value + 1); }} />}
     {creating && <ShipmentEditor user={user} stores={stores} selectedStore={selectedStore} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); resource.reload(); }} />}
     {detail && <ShipmentDetails key={`${detail}:${version}`} id={detail} user={user} onClose={() => setDetail(null)} onChanged={() => { resource.reload(); setVersion(value => value + 1); }} />}
   </>;
@@ -56,6 +66,7 @@ function ShipmentDetails({ id, user, onClose, onChanged }: { id: string; user: U
         {record.status === 'planned' && <><Button type="primary" onClick={() => action('dispatch')}>确认发出</Button><Button danger onClick={() => action('cancel')}>取消计划</Button></>}
         {['in_transit', 'partially_received'].includes(record.status) && <><Button onClick={() => setEditing('event')}>登记进度</Button><Button type="primary" onClick={() => setEditing('receipt')}>登记接收</Button></>}
       </>}</Space></div>
+      {record.merged_into_id && <p>此货件已合并至 <a href={`#shipments?id=${encodeURIComponent(record.merged_into_id)}&store=${encodeURIComponent(record.store_id)}`}>目标货件</a>，原商品明细保留备查。</p>}
       <Descriptions bordered column={2} size="small" items={[
         { key: 'store', label: '所属店铺', children: record.store_name }, { key: 'route', label: '运输路线', children: `${record.source_name} → ${record.destination_name}` },
         { key: 'carrier', label: '承运商', children: record.carrier || '—' }, { key: 'tracking', label: '物流运单', children: record.tracking_number || '—' },
