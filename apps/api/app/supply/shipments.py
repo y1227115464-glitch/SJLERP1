@@ -13,6 +13,8 @@ from app.supply.schemas import ActionInput, EventInput, ReceiptInput, ShipmentIn
 from app.supply.packing import require_whole_cartons
 from app.supply.stock import StockChange, change_stock
 from app.supply.defaults import resolve_warehouse
+from app.supply.line_changes import ShipmentLineChange
+from app.supply.shipment_lines import amend_shipment
 
 from app.tasks.events import enqueue
 
@@ -220,3 +222,8 @@ def edit_line_packing(identifier: str, line_id: str, payload: ShipmentLinePackin
     audit(db, user, 'shipments.packing.update', 'shipment', identifier, notes, record.store_id)
     db.commit()
     return shipment_detail(db, record)
+
+
+@router.patch('/{identifier}/lines')
+def edit_lines(identifier: str, payload: ShipmentLineChange, db: DB, user: Writer):
+    return amend_shipment(identifier, payload, db, user)

@@ -8,6 +8,7 @@ import { queryPath, useDebouncedValue } from './CatalogShared';
 import { displayMoney, options, purchaseStatuses, QuantityInput, RemoteSelect, requestId, required, StatusTag, StoreField, storeParam } from './SupplyShared';
 import { ProductQuickEditor } from './ProductQuickEditor';
 import { cartonText, totalWeight } from './packing';
+import { PurchaseLinesEditor } from './PurchaseLinesEditor';
 import { ShipmentEditor } from './ShipmentForms';
 import { SourceTasks, useLinkedDetail } from './TaskShared';
 import type { PurchaseOrder } from './supply-types';
@@ -52,8 +53,9 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onChanged }: { id:
   const { modal, message } = AntApp.useApp();
   const [error, setError] = useState('');
   const [productId, setProductId] = useState<string>();
+  const [editingLines, setEditingLines] = useState(false);
   const [followup, setFollowup] = useState<'schedule' | 'production'>();
-  const perform = (action: 'confirm' | 'cancel') => modal.confirm({ title: action === 'confirm' ? '登记已向供应商下单？' : '取消尚未分配的采购余量？', content: action === 'confirm' ? '用于记录已完成的下单操作，不会自动向供应商发送订单。登记后商品、数量和金额将锁定，可以安排分批发货。' : '仅取消未分配给货件的余量，已到货、待发及在途数量均保留。', onOk: async () => {
+  const perform = (action: 'confirm' | 'cancel') => modal.confirm({ title: action === 'confirm' ? '登记已向供应商下单？' : '取消尚未分配的采购余量？', content: action === 'confirm' ? '用于记录已完成的下单操作，不会自动向供应商发送订单。登记后可以安排分批发货，也可调整商品数量或追加商品，原商品单价保留。' : '仅取消未分配给货件的余量，已到货、待发及在途数量均保留。', onOk: async () => {
     try { await api(`/purchase-orders/${id}/${action}`, { method: 'POST', body: {} }); message.success('采购单已更新'); onChanged(); }
     catch (cause) { setError(errorText(cause)); throw cause; }
   } });
@@ -61,6 +63,7 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onChanged }: { id:
     <ErrorNotice error={resource.error || error} retry={resource.reload} />{order && <>
       <div className="supply-detail-heading"><div><h2>{order.number}</h2><StatusTag status={order.status} labels={purchaseStatuses} overdue={order.overdue} /></div><Space wrap>
         {user.permissions.includes('purchases.manage') && order.status === 'draft' && <><Button onClick={() => onEdit(order)}>编辑草稿</Button><Button type="primary" onClick={() => perform('confirm')}>登记已下单</Button></>}
+        {user.permissions.includes('purchases.manage') && ['ordered', 'partially_received', 'received'].includes(order.status) && <Button onClick={() => setEditingLines(true)}>编辑商品及数量</Button>}
         {user.permissions.includes('shipments.manage') && ['ordered', 'partially_received'].includes(order.status) && <Button type="primary" onClick={() => onPlan(order)}>安排供应商发货</Button>}
         {user.permissions.includes('purchases.manage') && !['received', 'closed', 'cancelled'].includes(order.status) && <Button danger onClick={() => perform('cancel')}>取消未分配余量</Button>}
       </Space></div>
@@ -82,6 +85,7 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onChanged }: { id:
         { title: '可安排发货', dataIndex: 'unallocated_quantity' }, { title: '已取消', dataIndex: 'cancelled_quantity' },
       ]} />
       {!!order.production_history?.length && <><h3 className="catalog-section-title">生产确认记录（最近 50 条）</h3><Timeline items={order.production_history.map((entry, index) => ({ key: index, content: <><p className="catalog-prewrap">{entry.notes}</p><small>{entry.actor_name} · {dateTime(entry.created_at)}</small></> }))} /></>}
+      {editingLines && <PurchaseLinesEditor order={order} onClose={() => setEditingLines(false)} onSaved={onChanged} />}
       <SourceTasks source={{ kind: 'purchase', id, number: order.number, store_id: order.store_id }} user={user} />
       {productId && <ProductQuickEditor id={productId} onClose={() => setProductId(undefined)} onSaved={() => { setProductId(undefined); onChanged(); }} />}
       {followup && <PurchaseFollowup kind={followup} order={order} onClose={() => setFollowup(undefined)} onSaved={onChanged} />}

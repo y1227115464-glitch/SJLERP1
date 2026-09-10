@@ -5,6 +5,7 @@ import { api, errorText } from './api';
 import { dateTime, EmptyState, ErrorNotice, PageHeading, usePagedList, useResource } from './common';
 import { queryPath, useDebouncedValue } from './CatalogShared';
 import { options, requestId, shipmentStatuses, stageLabels, StatusTag, storeParam } from './SupplyShared';
+import { ShipmentLinesEditor } from './ShipmentLinesEditor';
 import { ShipmentPackingEditor } from './ShipmentPackingEditor';
 import { EventEditor, LogisticsEditor, ReceiptEditor, ShipmentEditor } from './ShipmentForms';
 import { SourceTasks, useLinkedDetail } from './TaskShared';
@@ -39,7 +40,7 @@ export function ShipmentsPage({ user, stores, selectedStore }: { user: User; sto
 function ShipmentDetails({ id, user, onClose, onChanged }: { id: string; user: User; onClose: () => void; onChanged: () => void }) {
   const resource = useResource<Shipment>(`/shipments/${id}`); const record = resource.data;
   const [packingLine, setPackingLine] = useState<ShipmentLine>();
-  const [editing, setEditing] = useState<'logistics' | 'event' | 'receipt' | null>(null); const [error, setError] = useState('');
+  const [editing, setEditing] = useState<'logistics' | 'event' | 'receipt' | 'lines' | null>(null); const [error, setError] = useState('');
   const { modal, message } = AntApp.useApp();
   const canManage = user.permissions.includes('shipments.manage');
   const [actionTokens] = useState(() => ({ dispatch: requestId(), cancel: requestId() }));
@@ -50,6 +51,7 @@ function ShipmentDetails({ id, user, onClose, onChanged }: { id: string; user: U
   return <Drawer open title="发货跟进详情" size={1080} onClose={onClose} loading={resource.loading}>
     <ErrorNotice error={resource.error || error} retry={resource.reload} />{record && <>
       <div className="supply-detail-heading"><div><h2>{record.number}</h2><StatusTag status={record.status} labels={shipmentStatuses} overdue={record.overdue} /></div><Space wrap>{canManage && <>
+        {['planned', 'in_transit', 'partially_received'].includes(record.status) && <Button danger onClick={() => setEditing('lines')}>修改产品及数量（不建议操作）</Button>}
         {!['received', 'cancelled'].includes(record.status) && <Button onClick={() => setEditing('logistics')}>物流资料</Button>}
         {record.status === 'planned' && <><Button type="primary" onClick={() => action('dispatch')}>确认发出</Button><Button danger onClick={() => action('cancel')}>取消计划</Button></>}
         {['in_transit', 'partially_received'].includes(record.status) && <><Button onClick={() => setEditing('event')}>登记进度</Button><Button type="primary" onClick={() => setEditing('receipt')}>登记接收</Button></>}
@@ -68,6 +70,7 @@ function ShipmentDetails({ id, user, onClose, onChanged }: { id: string; user: U
       <h3 className="catalog-section-title">物流跟进记录（最近 200 条）</h3><Timeline items={(record.events || []).map(item => ({ key: item.id, color: item.stage === 'delayed' ? 'red' : 'blue', content: <><strong>{stageLabels[item.stage] || item.stage}</strong><p className="catalog-prewrap">{item.notes}</p><small className="cell-secondary">{dateTime(item.created_at)} · {item.actor_name}</small></> }))} />
       <SourceTasks source={{ kind: 'shipment', id, number: record.number, store_id: record.store_id }} user={user} />
       {packingLine && <ShipmentPackingEditor shipment={record} line={packingLine} onClose={() => setPackingLine(undefined)} onSaved={onChanged} />}
+      {editing === 'lines' && <ShipmentLinesEditor shipment={record} onClose={() => setEditing(null)} onSaved={onChanged} />}
       {editing === 'logistics' && <LogisticsEditor shipment={record} onClose={() => setEditing(null)} onSaved={onChanged} />}
       {editing === 'event' && <EventEditor shipment={record} onClose={() => setEditing(null)} onSaved={onChanged} />}
       {editing === 'receipt' && <ReceiptEditor shipment={record} onClose={() => setEditing(null)} onSaved={onChanged} />}

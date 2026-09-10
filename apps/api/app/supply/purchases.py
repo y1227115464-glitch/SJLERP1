@@ -9,6 +9,8 @@ from app.models import Supplier, User, new_id, now
 from app.supply.common import active_products, active_store, allocations, number, operation, purchase_out, purchase_status, scoped, scoped_record
 from app.supply.models import PurchaseLine, PurchaseOrder, Shipment, ShipmentLine
 from app.supply.schemas import PurchaseInput, PurchaseCreate, PurchaseScheduleInput
+from app.supply.line_changes import PurchaseLineChange
+from app.supply.purchase_lines import amend_purchase
 
 from app.tasks.events import enqueue
 from app.tasks.schemas import ProgressInput
@@ -93,7 +95,7 @@ def create(payload: PurchaseCreate, db: DB, user: Writer):
 def edit(identifier: str, changes: dict, db: DB, user: Writer):
     record = scoped_record(db, PurchaseOrder, identifier, user, lock=True)
     if record.status != 'draft':
-        fail(409, 'purchase_locked', '已提交采购单不能编辑数量金额；请取消余量后另建单据')
+        fail(409, 'purchase_locked', '已提交采购单请使用「编辑商品及数量」调整明细，不能修改原单其他资料')
     stored = {key: getattr(record, key) for key in PurchaseInput.model_fields if key not in {'request_id', 'lines'}}
     stored.update(request_id=new_id(), lines=[{'product_id': line.product_id, 'quantity': line.quantity, 'unit_price': line.unit_price} for line in record.lines])
     if {'request_id', 'store_id'} & changes.keys():
@@ -108,6 +110,11 @@ def edit(identifier: str, changes: dict, db: DB, user: Writer):
     db.commit()
     db.expire(record)
     return purchase_out(record, user)
+
+
+@router.patch('/{identifier}/lines')
+def edit_lines(identifier: str, payload: PurchaseLineChange, db: DB, user: Writer):
+    return amend_purchase(identifier, payload, db, user)
 
 
 @router.post('/{identifier}/confirm')
