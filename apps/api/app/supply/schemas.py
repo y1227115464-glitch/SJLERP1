@@ -14,7 +14,7 @@ Quantity = Annotated[int, Field(strict=True, gt=0, le=1000000000)]
 class WarehouseInput(Input):
     code: str = Field(min_length=1, max_length=50, pattern=r'^[A-Za-z0-9_-]+$')
     name: str = Field(min_length=1, max_length=120)
-    kind: Literal['domestic', 'overseas', 'fba'] = 'domestic'
+    kind: Literal['domestic', 'overseas', 'fba'] = 'fba'
     address: str = Field(default='', max_length=1000)
     is_active: bool = True
 
@@ -65,7 +65,7 @@ class ShipmentInput(Input):
     store_id: Identifier
     purchase_order_id: Identifier | None = None
     source_warehouse_id: Identifier | None = None
-    destination_warehouse_id: Identifier
+    destination_warehouse_id: Identifier | None = None
     carrier: str = Field(default='', max_length=120)
     tracking_number: str = Field(default='', max_length=120)
     amazon_shipment_id: str = Field(default='', max_length=120)
@@ -78,7 +78,7 @@ class ShipmentInput(Input):
     def valid_shipment(self):
         if bool(self.purchase_order_id) == bool(self.source_warehouse_id):
             raise ValueError('请选择采购单或发货仓库作为唯一来源')
-        if self.source_warehouse_id == self.destination_warehouse_id:
+        if self.source_warehouse_id and self.source_warehouse_id == self.destination_warehouse_id:
             raise ValueError('发货仓库和目的仓库不能相同')
         if len({line.product_id for line in self.lines}) != len(self.lines):
             raise ValueError('同一商品只能填写一行')
@@ -124,7 +124,7 @@ class ReceiptInput(Input):
 class AdjustmentInput(Input):
     request_id: UUID
     store_id: Identifier
-    warehouse_id: Identifier
+    warehouse_id: Identifier | None = None
     product_id: Identifier
     quantity: Annotated[int, Field(strict=True, ge=-1000000000, le=1000000000)]
     reason: str = Field(min_length=1, max_length=2000)

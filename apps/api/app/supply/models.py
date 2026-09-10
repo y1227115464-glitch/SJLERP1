@@ -12,7 +12,7 @@ class Warehouse(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     code: Mapped[str] = mapped_column(String(50), unique=True)
     name: Mapped[str] = mapped_column(String(120))
-    kind: Mapped[str] = mapped_column(String(20), default='domestic')
+    kind: Mapped[str] = mapped_column(String(20), default='fba')
     address: Mapped[str] = mapped_column(String(1000), default='')
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

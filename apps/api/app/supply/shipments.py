@@ -12,6 +12,7 @@ from app.supply.models import PurchaseOrder, Shipment, ShipmentLine
 from app.supply.schemas import ActionInput, EventInput, ReceiptInput, ShipmentInput, ShipmentUpdate, ShipmentLinePacking
 from app.supply.packing import require_whole_cartons
 from app.supply.stock import StockChange, change_stock
+from app.supply.defaults import resolve_warehouse
 
 from app.tasks.events import enqueue
 
@@ -46,7 +47,9 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
     inserted, identifier = operation(db, payload, user, 'shipment.create', new_id())
     if not inserted:
         return shipment_detail(db, scoped_record(db, Shipment, identifier, user))
-    active_warehouse(db, payload.destination_warehouse_id)
+    destination = resolve_warehouse(db, user, payload.destination_warehouse_id)
+    if payload.source_warehouse_id == destination.id:
+        fail(422, 'same_warehouse', '发货仓库和目的仓库不能相同')
     products = active_products(db, [line.product_id for line in payload.lines])
     packing = {line.product_id: require_whole_cartons(line.quantity,
         line.units_per_carton if line.units_per_carton is not None else products[line.product_id].units_per_carton) for line in payload.lines}
@@ -65,7 +68,8 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
                 fail(409, 'purchase_overallocated', '商品不在采购单内，或发货数量超过尚未分配的采购余量')
     else:
         active_warehouse(db, payload.source_warehouse_id)
-    record = Shipment(id=identifier, number=number('SH'), **payload.model_dump(exclude={'request_id', 'lines'}))
+    record = Shipment(id=identifier, number=number('SH'), destination_warehouse_id=destination.id,
+                      **payload.model_dump(exclude={'request_id', 'lines', 'destination_warehouse_id'}))
     record.lines = [ShipmentLine(position=i, product_name=products[line.product_id].name,
         internal_sku=products[line.product_id].internal_sku,
         purchase_line_id=purchase_lines[line.product_id].id if purchase_lines else None,
