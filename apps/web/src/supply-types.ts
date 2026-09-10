@@ -1,12 +1,12 @@
 export interface Warehouse { id: string; code: string; name: string; kind: 'domestic' | 'overseas' | 'fba'; address: string; is_active: boolean }
-export interface PurchaseLine { id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number; cancelled_quantity: number; unit_price?: string; allocated_quantity?: number; unallocated_quantity?: number }
+export interface PurchaseLine { product_name_zh: string; units_per_carton: number | null; unit_weight_kg: string | null; total_weight_kg: string | null; id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number; cancelled_quantity: number; unit_price?: string; allocated_quantity?: number; unallocated_quantity?: number }
 export interface PurchaseOrder {
   production_history?: { created_at: string; notes: string; actor_name: string }[];
   id: string; number: string; store_id: string; store_name: string; supplier_id: string; supplier_name: string;
   ordered_at: string | null; status: string; order_date: string; expected_date: string | null; planned_ship_date: string | null; currency?: string; total_amount?: string;
   payment_terms?: string; notes: string; overdue: boolean; created_at: string; lines: PurchaseLine[];
 }
-export interface ShipmentLine { id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number }
+export interface ShipmentLine { units_per_carton: number | null; carton_count: number | null; id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number }
 export interface Shipment {
   id: string; number: string; store_id: string; store_name: string; purchase_order_id: string | null;
   source_warehouse_id: string | null; destination_warehouse_id: string; source_name: string; destination_name: string;

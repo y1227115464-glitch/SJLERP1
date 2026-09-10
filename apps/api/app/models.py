@@ -136,6 +136,8 @@ class Product(Base):
     internal_sku: Mapped[str] = mapped_column(String(120), unique=True)
     name: Mapped[str] = mapped_column(String(500))
     name_zh: Mapped[str] = mapped_column(String(200), default="")
+    units_per_carton: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unit_weight_kg: Mapped[object | None] = mapped_column(Numeric(18, 4), nullable=True)
     brand: Mapped[str] = mapped_column(String(120), default="", index=True)
     category: Mapped[str] = mapped_column(String(120), default="")
     specifications: Mapped[str] = mapped_column(Text, default="")

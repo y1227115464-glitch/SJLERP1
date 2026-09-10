@@ -3,6 +3,8 @@ export interface Product {
   internal_sku: string;
   name: string;
   name_zh: string;
+  units_per_carton: number | null;
+  unit_weight_kg: string | null;
   brand: string;
   category: string;
   specifications: string;

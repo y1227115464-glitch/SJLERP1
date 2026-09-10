@@ -1,9 +1,10 @@
+import { ProductEditor } from './ProductEditor';
 import { useState } from 'react';
-import { Alert, App as AntApp, Button, Card, Col, Descriptions, Drawer, Form, Input, Modal, Row, Select, Space, Spin, Switch, Table, Tabs, Tag, Upload } from 'antd';
+import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Upload } from 'antd';
 import { CheckCircleOutlined, EditOutlined, FileTextOutlined, ImportOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import { api, errorText } from './api';
 import { ActiveTag, dateTime, EmptyState, ErrorNotice, PageHeading, usePagedList, useResource } from './common';
-import { amountRule, money, multilineRule, multilineToArray, ProductImage, queryPath, ReviewTag, safeSourceUrl, SharedCatalogNotice, urlRule, useDebouncedValue } from './CatalogShared';
+import { money, ProductImage, queryPath, ReviewTag, safeSourceUrl, SharedCatalogNotice, useDebouncedValue } from './CatalogShared';
 import type { Product, ProductImportPreview, ProductImportResult, ProductMeta, PriceUnit } from './catalog-types';
 import type { User } from './types';
 
@@ -33,6 +34,7 @@ export function ProductsPage({ user }: { user: User }) {
         { title: '商品 / 内部 SKU', dataIndex: 'name', width: 390, render: (_: string, product) => <div className="catalog-product-cell"><ProductImage url={product.image_url} name={product.name} /><div><button className="catalog-title-link" onClick={() => setDetailId(product.id)}>{product.name_zh || product.name}</button>{product.name_zh && <div className="product-name-en">{product.name}</div>}<small className="cell-secondary mono">{product.internal_sku}</small></div></div> },
         { title: '品牌 / 分类', dataIndex: 'brand', width: 150, render: (value: string, product) => <div>{value || '—'}<small className="cell-secondary">{product.category || '未分类'}</small></div> },
         { title: '规格 / 材质', dataIndex: 'specifications', width: 190, render: (value: string, product) => <div className="catalog-wrap">{value || '—'}<small className="cell-secondary">{product.material || '材质未填写'}</small></div> },
+        { title: '箱规 / 单件重量', width: 160, render: (_: unknown, product) => <>{product.units_per_carton ? `${product.units_per_carton} 件/箱` : '箱规未维护'}<small className="cell-secondary">{product.unit_weight_kg ? `${product.unit_weight_kg} kg/件` : '重量未维护'}</small></> },
         { title: '来源参考标识', dataIndex: 'asin', width: 165, render: (value: string, product) => <div className="identifier-cell"><span><b>ASIN</b>{value || '—'}</span><span><b>FNSKU</b>{product.fnsku || '—'}</span></div> },
         { title: '参考售价', dataIndex: 'sale_price', width: 145, render: (value: string | null, product) => <div>{money(value, product.currency)}<small className="cell-secondary">非采购成本</small></div> },
         { title: '状态', dataIndex: 'is_active', width: 110, render: (value: boolean, product) => <Space direction="vertical" size={5}><ActiveTag active={value} /><ReviewTag needsReview={product.review_notes.length > 0} /></Space> },
@@ -59,6 +61,7 @@ function ProductDetails({ id, canManage, onClose, onEdit }: { id: string; canMan
           { key: 'name_zh', label: '中文名称', children: product.name_zh || '—', span: 2 },
           { key: 'category', label: '分类', children: product.category || '—' }, { key: 'material', label: '材质', children: product.material || '—' },
           { key: 'spec', label: '规格', children: <span className="catalog-prewrap">{product.specifications || '—'}</span>, span: 2 },
+          { key: 'carton', label: '箱规', children: product.units_per_carton ? `${product.units_per_carton} 件/箱` : '未维护' }, { key: 'weight', label: '单件重量', children: product.unit_weight_kg ? `${product.unit_weight_kg} kg` : '未维护' },
           { key: 'asin', label: 'ASIN（参考）', children: product.asin || '—' }, { key: 'fnsku', label: 'FNSKU（参考）', children: product.fnsku || '—' },
           { key: 'price', label: '参考售价', children: money(product.sale_price, product.currency) }, { key: 'original_price', label: '参考原价', children: money(product.original_sale_price, product.currency) },
           { key: 'amazon', label: '亚马逊链接', span: 2, children: safeSourceUrl(product.amazon_url) ? <a href={product.amazon_url} target="_blank" rel="noopener noreferrer">打开来源商品页面 <LinkOutlined /></a> : '未填写' },
@@ -69,40 +72,6 @@ function ProductDetails({ id, canManage, onClose, onEdit }: { id: string; canMan
       ]} />
     </>}
   </Drawer>;
-}
-
-interface ProductValues extends Omit<Product, 'id' | 'created_at' | 'updated_at' | 'source_data' | 'source_filename' | 'source_row' | 'image_urls' | 'bullet_points' | 'review_notes'> {
-  image_urls_text: string; bullet_points_text: string; review_notes_text: string;
-}
-function ProductEditor({ product, onClose, onSaved }: { product: Product | null; onClose: () => void; onSaved: () => void }) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [tab, setTab] = useState('basics');
-  const [form] = Form.useForm<ProductValues>();
-  const { message } = AntApp.useApp();
-  const save = async (values: ProductValues) => {
-    const { image_urls_text, bullet_points_text, review_notes_text } = values;
-    const fields = Object.fromEntries(['internal_sku', 'name', 'name_zh', 'brand', 'category', 'specifications', 'material', 'title', 'description', 'asin', 'fnsku', 'image_url', 'amazon_url', 'currency', 'is_active', 'notes'].map(key => [key, values[key as keyof ProductValues]]));
-    const body = { ...fields, internal_sku: values.internal_sku.trim(), name: values.name.trim(), image_urls: multilineToArray(image_urls_text), bullet_points: multilineToArray(bullet_points_text), review_notes: multilineToArray(review_notes_text), sale_price: values.sale_price || null, original_sale_price: values.original_sale_price || null };
-    setSaving(true); setError('');
-    try { await api(product ? `/products/${product.id}` : '/products', { method: product ? 'PATCH' : 'POST', body }); message.success(product ? '商品档案已更新' : '商品已创建'); onSaved(); }
-    catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
-  };
-  const initial = product ? { ...product, image_urls_text: product.image_urls.join('\n'), bullet_points_text: product.bullet_points.join('\n'), review_notes_text: product.review_notes.join('\n') } : { currency: 'USD', is_active: true, image_urls_text: '', bullet_points_text: '', review_notes_text: '' };
-  const textField = (name: keyof ProductValues, label: string, max: number, placeholder?: string) => <Form.Item name={name} label={label} rules={[{ max, message: `最多 ${max} 字符` }]}><Input placeholder={placeholder} maxLength={max} /></Form.Item>;
-  return <Modal title={product ? '编辑商品档案' : '新增商品档案'} open onCancel={() => { if (!saving) onClose(); }} footer={null} width={990} styles={{ body: { maxHeight: '76vh', overflowY: 'auto' } }}>
-    <ErrorNotice error={error} /><Form form={form} layout="vertical" initialValues={initial} onFinish={save} requiredMark="optional" onFinishFailed={({ errorFields }) => {
-      const field = errorFields[0]?.name[0];
-      setTab(['title', 'description', 'bullet_points_text', 'image_url', 'image_urls_text', 'amazon_url'].includes(String(field)) ? 'listing' : ['sale_price', 'original_sale_price', 'currency', 'review_notes_text', 'notes'].includes(String(field)) ? 'review' : 'basics');
-    }}>
-      <Tabs activeKey={tab} onChange={setTab} items={[
-        { key: 'basics', label: '基本信息', forceRender: true, children: <><Row gutter={20}><Col xs={24} sm={12}><Form.Item name="internal_sku" label="内部 SKU" rules={[{ required: true, whitespace: true, message: '请输入内部 SKU' }, { max: 120, message: '最多 120 字符' }]}><Input maxLength={120} placeholder="公司内部唯一商品编码" /></Form.Item></Col><Col xs={24} sm={12}>{textField('brand', '品牌', 120)}</Col></Row><Form.Item name="name" label="商品名称" rules={[{ required: true, whitespace: true, message: '请输入商品名称' }, { max: 500, message: '最多 500 字符' }]}><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} maxLength={500} placeholder="保留完整英文或原商品名称" /></Form.Item>{textField('name_zh', '中文名称', 200)}<Row gutter={20}><Col xs={24} sm={12}>{textField('category', '分类', 120)}</Col><Col xs={24} sm={12}>{textField('material', '材质', 120)}</Col></Row><Form.Item name="specifications" label="规格" rules={[{ max: 2000, message: '最多 2000 字符' }]}><Input.TextArea rows={3} maxLength={2000} placeholder="尺寸、组合数量、颜色或包装规格" /></Form.Item><Row gutter={20}><Col xs={24} sm={12}>{textField('asin', 'ASIN（来源参考）', 40)}</Col><Col xs={24} sm={12}>{textField('fnsku', 'FNSKU（来源参考）', 40)}</Col></Row><p className="catalog-field-help">参考标识不会自动建立店铺商品映射。同一品牌也可能由多个店铺经营。</p><Form.Item name="is_active" label="商品状态" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="停用" /></Form.Item></> },
-        { key: 'listing', label: '图片与文案', forceRender: true, children: <><Form.Item name="image_url" label="主图链接" rules={[urlRule, { max: 2000, message: '链接最多 2000 字符' }]}><Input placeholder="https://…" /></Form.Item><Form.Item name="image_urls_text" label="其他图片链接" extra="每行一条 http 或 https 链接，仅引用来源图片。" rules={[multilineRule(200, 2000), { validator: (_: unknown, value: string) => multilineToArray(value).every(url => url.length <= 2000 && safeSourceUrl(url)) ? Promise.resolve() : Promise.reject(new Error('请检查图片链接：每行一条有效 http/https URL，最多 2000 字符')) }]}><Input.TextArea rows={3} /></Form.Item><Form.Item name="amazon_url" label="亚马逊商品链接" rules={[urlRule, { max: 2000, message: '链接最多 2000 字符' }]}><Input placeholder="https://www.amazon.com/…" /></Form.Item><Form.Item name="title" label="Listing 标题" rules={[{ max: 20000, message: '最多 20000 字符' }]}><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} /></Form.Item><Form.Item name="bullet_points_text" label="卖点" rules={[multilineRule(100, 20000)]} extra="每行一条卖点，保存后按条目保留。"><Input.TextArea rows={5} /></Form.Item><Form.Item name="description" label="商品描述" rules={[{ max: 20000, message: '最多 20000 字符' }]}><Input.TextArea rows={5} /></Form.Item></> },
-        { key: 'review', label: '售价与核对', forceRender: true, children: <><Alert className="page-notice" type="info" showIcon title="这里维护商品参考售价" description="采购报价和核算成本独立维护。来源价格单位未确认时，请留空并保留待核对说明。" /><Row gutter={20}><Col xs={24} sm={8}><Form.Item name="currency" label="售价币种" rules={[{ required: true, message: '请选择币种' }]}><Select options={[{ value: 'USD', label: 'USD 美元' }, { value: 'CNY', label: 'CNY 人民币' }]} /></Form.Item></Col><Col xs={24} sm={8}><Form.Item name="sale_price" label="参考售价" rules={[amountRule]}><Input inputMode="decimal" placeholder="未确认时留空" /></Form.Item></Col><Col xs={24} sm={8}><Form.Item name="original_sale_price" label="参考原价" rules={[amountRule]}><Input inputMode="decimal" placeholder="未提供时留空" /></Form.Item></Col></Row><Form.Item name="review_notes_text" label="待核对说明" rules={[multilineRule(100, 2000)]} extra="每行一项。完成核对后移除对应项；全部清空表示该商品已人工核对。"><Input.TextArea rows={5} placeholder="例如：规格与标题不一致，需要核对原始资料" /></Form.Item><Form.Item name="notes" label="内部备注" rules={[{ max: 20000, message: '最多 20000 字符' }]}><Input.TextArea rows={4} /></Form.Item></> },
-      ]} />
-      <div className="form-footer"><Button onClick={onClose} disabled={saving}>取消</Button><Button type="primary" htmlType="submit" loading={saving}>保存商品</Button></div>
-    </Form>
-  </Modal>;
 }
 
 function ProductImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {

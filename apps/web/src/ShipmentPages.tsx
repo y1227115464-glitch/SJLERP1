@@ -5,9 +5,10 @@ import { api, errorText } from './api';
 import { dateTime, EmptyState, ErrorNotice, PageHeading, usePagedList, useResource } from './common';
 import { queryPath, useDebouncedValue } from './CatalogShared';
 import { options, requestId, shipmentStatuses, stageLabels, StatusTag, storeParam } from './SupplyShared';
+import { ShipmentPackingEditor } from './ShipmentPackingEditor';
 import { EventEditor, LogisticsEditor, ReceiptEditor, ShipmentEditor } from './ShipmentForms';
 import { SourceTasks, useLinkedDetail } from './TaskShared';
-import type { Shipment } from './supply-types';
+import type { Shipment, ShipmentLine } from './supply-types';
 import type { Store, User } from './types';
 
 export function ShipmentsPage({ user, stores, selectedStore }: { user: User; stores: Store[]; selectedStore: string }) {
@@ -37,6 +38,7 @@ export function ShipmentsPage({ user, stores, selectedStore }: { user: User; sto
 
 function ShipmentDetails({ id, user, onClose, onChanged }: { id: string; user: User; onClose: () => void; onChanged: () => void }) {
   const resource = useResource<Shipment>(`/shipments/${id}`); const record = resource.data;
+  const [packingLine, setPackingLine] = useState<ShipmentLine>();
   const [editing, setEditing] = useState<'logistics' | 'event' | 'receipt' | null>(null); const [error, setError] = useState('');
   const { modal, message } = AntApp.useApp();
   const canManage = user.permissions.includes('shipments.manage');
@@ -61,10 +63,11 @@ function ShipmentDetails({ id, user, onClose, onChanged }: { id: string; user: U
         { key: 'notes', label: '物流备注', children: record.notes || '—', span: 2 },
       ]} />
       <h3 className="catalog-section-title">本批商品</h3><Table rowKey="id" dataSource={record.lines} pagination={false} columns={[
-        { title: '商品', render: (_, line) => <>{line.product_name}<small className="cell-secondary">{line.internal_sku}</small></> }, { title: '本批数量', dataIndex: 'quantity' }, { title: '已接收', dataIndex: 'received_quantity' }, { title: '待接收', render: (_, line) => record.status === 'cancelled' ? '已取消' : line.quantity - line.received_quantity },
+        { title: '商品', render: (_, line) => <>{line.product_name}<small className="cell-secondary">{line.internal_sku}</small></> }, { title: '箱规（件/箱）', render: (_, line) => <>{line.units_per_carton ?? '未维护'}{canManage && record.status === 'planned' && <Button type="link" size="small" onClick={() => setPackingLine(line)}>修改箱规</Button>}</> }, { title: '箱数', render: (_, line) => line.carton_count ?? '未维护' }, { title: '本批数量', dataIndex: 'quantity' }, { title: '已接收', dataIndex: 'received_quantity' }, { title: '待接收', render: (_, line) => record.status === 'cancelled' ? '已取消' : line.quantity - line.received_quantity },
       ]} />
       <h3 className="catalog-section-title">物流跟进记录（最近 200 条）</h3><Timeline items={(record.events || []).map(item => ({ key: item.id, color: item.stage === 'delayed' ? 'red' : 'blue', content: <><strong>{stageLabels[item.stage] || item.stage}</strong><p className="catalog-prewrap">{item.notes}</p><small className="cell-secondary">{dateTime(item.created_at)} · {item.actor_name}</small></> }))} />
       <SourceTasks source={{ kind: 'shipment', id, number: record.number, store_id: record.store_id }} user={user} />
+      {packingLine && <ShipmentPackingEditor shipment={record} line={packingLine} onClose={() => setPackingLine(undefined)} onSaved={onChanged} />}
       {editing === 'logistics' && <LogisticsEditor shipment={record} onClose={() => setEditing(null)} onSaved={onChanged} />}
       {editing === 'event' && <EventEditor shipment={record} onClose={() => setEditing(null)} onSaved={onChanged} />}
       {editing === 'receipt' && <ReceiptEditor shipment={record} onClose={() => setEditing(null)} onSaved={onChanged} />}

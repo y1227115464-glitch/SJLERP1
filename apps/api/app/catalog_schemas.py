@@ -7,6 +7,8 @@ from pydantic import Field, StringConstraints, field_validator, model_validator
 from app.schemas import Input
 
 Money = Annotated[Decimal, Field(ge=0, max_digits=18, decimal_places=4, allow_inf_nan=False)]
+CartonSize = Annotated[int, Field(strict=True, gt=0, le=1000000000)]
+Weight = Annotated[Decimal, Field(gt=0, max_digits=18, decimal_places=4, allow_inf_nan=False)]
 Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
 
 
@@ -22,6 +24,8 @@ def http_url(value: str) -> str:
 class ProductCreate(Input):
     internal_sku: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=500)
+    units_per_carton: CartonSize | None = None
+    unit_weight_kg: Weight | None = None
     name_zh: str = Field(default="", max_length=200)
     brand: str = Field(default="", max_length=120)
     category: str = Field(default="", max_length=120)

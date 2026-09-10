@@ -54,6 +54,7 @@ class PurchaseLine(Base):
     received_quantity: Mapped[int] = mapped_column(BigInteger, default=0)
     cancelled_quantity: Mapped[int] = mapped_column(BigInteger, default=0)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    product: Mapped[Product] = relationship(lazy='joined')
 
 
 class Shipment(Base):
@@ -87,6 +88,7 @@ class Shipment(Base):
 
 class ShipmentLine(Base):
     __tablename__ = 'shipment_lines'
+    units_per_carton: Mapped[int | None] = mapped_column(Integer, nullable=True)
     __table_args__ = (UniqueConstraint('shipment_id', 'product_id'), CheckConstraint('quantity > 0 AND received_quantity >= 0 AND received_quantity <= quantity'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     shipment_id: Mapped[str] = mapped_column(ForeignKey('shipments.id'), index=True)

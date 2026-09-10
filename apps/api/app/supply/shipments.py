@@ -9,7 +9,8 @@ from app.core.security import has_permission
 from app.models import User, new_id, now
 from app.supply.common import active_products, active_store, active_warehouse, allocations, event, locked_shipment, number, operation, purchase_status, scoped, scoped_record, shipment_detail, shipment_out
 from app.supply.models import PurchaseOrder, Shipment, ShipmentLine
-from app.supply.schemas import ActionInput, EventInput, ReceiptInput, ShipmentInput, ShipmentUpdate
+from app.supply.schemas import ActionInput, EventInput, ReceiptInput, ShipmentInput, ShipmentUpdate, ShipmentLinePacking
+from app.supply.packing import require_whole_cartons
 from app.supply.stock import StockChange, change_stock
 
 from app.tasks.events import enqueue
@@ -47,6 +48,8 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
         return shipment_detail(db, scoped_record(db, Shipment, identifier, user))
     active_warehouse(db, payload.destination_warehouse_id)
     products = active_products(db, [line.product_id for line in payload.lines])
+    packing = {line.product_id: require_whole_cartons(line.quantity,
+        line.units_per_carton if line.units_per_carton is not None else products[line.product_id].units_per_carton) for line in payload.lines}
     purchase_lines = {}
     if payload.purchase_order_id:
         if not has_permission(user, 'purchases.view'):
@@ -66,7 +69,7 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
     record.lines = [ShipmentLine(position=i, product_name=products[line.product_id].name,
         internal_sku=products[line.product_id].internal_sku,
         purchase_line_id=purchase_lines[line.product_id].id if purchase_lines else None,
-        **line.model_dump()) for i, line in enumerate(payload.lines)]
+        units_per_carton=packing[line.product_id], **line.model_dump(exclude={'units_per_carton'})) for i, line in enumerate(payload.lines)]
     db.add(record)
     db.flush()
     if payload.source_warehouse_id:
@@ -108,6 +111,8 @@ def dispatch(identifier: str, payload: ActionInput, db: DB, user: Writer):
         return shipment_detail(db, record)
     if record.status != 'planned':
         fail(409, 'invalid_status', '只有待发货件可以确认发出')
+    for line in record.lines:
+        require_whole_cartons(line.quantity, line.units_per_carton)
     if record.source_warehouse_id:
         change_stock(db, user, StockChange(record.store_id, record.source_warehouse_id,
             {line.product_id: (-line.quantity, -line.quantity) for line in record.lines}, 'dispatch', identifier, record.number, '确认发货出库'))
@@ -191,5 +196,23 @@ def receive(identifier: str, payload: ReceiptInput, db: DB, user: Writer):
           f'本次接收 {sum(item.quantity for item in payload.lines)} 件。{payload.notes}')
     audit(db, user, 'shipments.receive', 'shipment', identifier, '登记分批接收并过账库存', record.store_id)
     enqueue(db, record, 'shipment', user, 'updated')
+    db.commit()
+    return shipment_detail(db, record)
+
+
+@router.patch('/{identifier}/lines/{line_id}')
+def edit_line_packing(identifier: str, line_id: str, payload: ShipmentLinePacking, db: DB, user: Writer):
+    record, _ = locked_shipment(db, identifier, user)
+    if record.status != 'planned':
+        fail(409, 'shipment_packing_locked', '只有待发货件可以修改本单箱规')
+    line = next((item for item in record.lines if item.id == line_id), None)
+    if line is None:
+        fail(404, 'not_found', '商品行不属于此货件')
+    require_whole_cartons(line.quantity, payload.units_per_carton)
+    previous = line.units_per_carton
+    line.units_per_carton = payload.units_per_carton
+    notes = f'{line.internal_sku} 箱规从 {previous or "未维护"} 调整为 {line.units_per_carton} 件/箱'
+    event(db, record, user, 'note', notes)
+    audit(db, user, 'shipments.packing.update', 'shipment', identifier, notes, record.store_id)
     db.commit()
     return shipment_detail(db, record)

@@ -22,7 +22,7 @@ def post(client, path, headers, body, status=201):
 def fixtures(system):
     client = system['client']
     headers = login(client)
-    product = post(client, '/products', headers, {'internal_sku': 'SUPPLY-TEST', 'name': '供应链测试商品'})
+    product = post(client, '/products', headers, {'internal_sku': 'SUPPLY-TEST', 'name': '供应链测试商品', 'units_per_carton': 1})
     supplier = post(client, '/suppliers', headers, {'code': 'SUPPLY', 'name': '供应链测试供应商'})
     source = post(client, '/warehouses', headers, {'code': 'CN', 'name': '国内测试仓', 'kind': 'domestic'})
     target = post(client, '/warehouses', headers, {'code': 'FBA', 'name': 'FBA测试仓', 'kind': 'fba'})

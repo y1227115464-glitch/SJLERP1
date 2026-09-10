@@ -102,6 +102,13 @@ def purchase_out(record, user):
     fields = 'id product_id product_name internal_sku quantity received_quantity cancelled_quantity'
     costs = has_permission(user, 'costs.view')
     result['lines'] = [values(line, fields + (' unit_price' if costs else '')) for line in record.lines]
+    for output, line in zip(result['lines'], record.lines):
+        product = line.product
+        output.update(product_name_zh=product.name_zh, units_per_carton=product.units_per_carton,
+                      unit_weight_kg=format(product.unit_weight_kg, '.4f') if product.unit_weight_kg is not None else None)
+        with localcontext() as context:
+            context.prec = 40
+            output['total_weight_kg'] = format(product.unit_weight_kg * line.quantity, '.4f') if product.unit_weight_kg is not None else None
     if costs:
         with localcontext() as context:
             context.prec = 40
@@ -114,7 +121,8 @@ def shipment_out(record):
     result = values(record, 'id number store_id purchase_order_id source_warehouse_id destination_warehouse_id status stage carrier tracking_number amazon_shipment_id expected_date planned_ship_date notes shipped_at received_at created_at updated_at')
     result.update(store_name=record.store.name, source_name=record.source.name if record.source else '供应商',
                   destination_name=record.destination.name, destination_kind=record.destination.kind, overdue=overdue(record))
-    result['lines'] = [values(line, 'id product_id product_name internal_sku quantity received_quantity') for line in record.lines]
+    result['lines'] = [{**values(line, 'id product_id product_name internal_sku quantity received_quantity units_per_carton'),
+                        'carton_count': line.quantity // line.units_per_carton if line.units_per_carton else None} for line in record.lines]
     return result
 
 

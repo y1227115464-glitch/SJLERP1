@@ -6,6 +6,8 @@ import { api, errorText } from './api';
 import { dateTime, EmptyState, ErrorNotice, PageHeading, usePagedList, useResource } from './common';
 import { queryPath, useDebouncedValue } from './CatalogShared';
 import { displayMoney, options, purchaseStatuses, QuantityInput, RemoteSelect, requestId, required, StatusTag, StoreField, storeParam } from './SupplyShared';
+import { ProductQuickEditor } from './ProductQuickEditor';
+import { cartonText, totalWeight } from './packing';
 import { ShipmentEditor } from './ShipmentForms';
 import { SourceTasks, useLinkedDetail } from './TaskShared';
 import type { PurchaseOrder } from './supply-types';
@@ -39,7 +41,7 @@ export function PurchasesPage({ user, stores, selectedStore }: Props) {
       ]} />
     </Card>
     {detail && <PurchaseDetails key={`${detail}:${version}`} id={detail} user={user} onClose={() => setDetail(null)} onEdit={setEditing} onPlan={setPlanning} onChanged={refresh} />}
-    {editing !== undefined && <PurchaseEditor order={editing} stores={stores} selectedStore={selectedStore} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); refresh(); }} />}
+    {editing !== undefined && <PurchaseEditor user={user} order={editing} stores={stores} selectedStore={selectedStore} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); refresh(); }} />}
     {planning && <ShipmentEditor user={user} stores={stores} selectedStore={selectedStore} purchase={planning} onClose={() => setPlanning(null)} onSaved={() => { setPlanning(null); refresh(); }} />}
   </>;
 }
@@ -49,6 +51,7 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onChanged }: { id:
   const order = resource.data;
   const { modal, message } = AntApp.useApp();
   const [error, setError] = useState('');
+  const [productId, setProductId] = useState<string>();
   const [followup, setFollowup] = useState<'schedule' | 'production'>();
   const perform = (action: 'confirm' | 'cancel') => modal.confirm({ title: action === 'confirm' ? '登记已向供应商下单？' : '取消尚未分配的采购余量？', content: action === 'confirm' ? '用于记录已完成的下单操作，不会自动向供应商发送订单。登记后商品、数量和金额将锁定，可以安排分批发货。' : '仅取消未分配给货件的余量，已到货、待发及在途数量均保留。', onOk: async () => {
     try { await api(`/purchase-orders/${id}/${action}`, { method: 'POST', body: {} }); message.success('采购单已更新'); onChanged(); }
@@ -70,22 +73,30 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onChanged }: { id:
         { key: 'notes', label: '备注', children: order.notes || '—', span: 2 }, { key: 'created', label: '创建时间', children: dateTime(order.created_at), span: 2 },
       ]} />
       <h3 className="catalog-section-title">商品及交付情况</h3>
-      <Table rowKey="id" dataSource={order.lines} pagination={false} scroll={{ x: 850 }} columns={[
-        { title: '商品', render: (_, line) => <>{line.product_name}<small className="cell-secondary">{line.internal_sku}</small></> },
+      <Table rowKey="id" dataSource={order.lines} pagination={false} scroll={{ x: 1150 }} columns={[
+        { title: 'SKU / 中文商品名', render: (_, line) => <>{line.internal_sku}<small className="cell-secondary">{line.product_name_zh || line.product_name}</small>{user.permissions.includes('products.manage') && <Button type="link" size="small" onClick={() => setProductId(line.product_id)}>编辑商品信息</Button>}</> },
+        { title: '箱规 / 箱数', render: (_, line) => <>{cartonText(line.quantity, line.units_per_carton)}<small className="cell-secondary">{line.units_per_carton ? `${line.units_per_carton} 件/箱` : '未维护'}</small></> },
+        { title: '总重量（kg）', render: (_, line) => <>{line.total_weight_kg ?? '未维护'}<small className="cell-secondary">{line.unit_weight_kg ? `${line.unit_weight_kg} kg/件` : '单重未维护'}</small></> },
         { title: '采购量', dataIndex: 'quantity' }, ...(order.total_amount !== undefined ? [{ title: '单价', dataIndex: 'unit_price' }] : []),
         { title: '已到货', dataIndex: 'received_quantity' }, { title: '待发 / 在途', dataIndex: 'allocated_quantity' },
         { title: '可安排发货', dataIndex: 'unallocated_quantity' }, { title: '已取消', dataIndex: 'cancelled_quantity' },
       ]} />
       {!!order.production_history?.length && <><h3 className="catalog-section-title">生产确认记录（最近 50 条）</h3><Timeline items={order.production_history.map((entry, index) => ({ key: index, content: <><p className="catalog-prewrap">{entry.notes}</p><small>{entry.actor_name} · {dateTime(entry.created_at)}</small></> }))} /></>}
       <SourceTasks source={{ kind: 'purchase', id, number: order.number, store_id: order.store_id }} user={user} />
+      {productId && <ProductQuickEditor id={productId} onClose={() => setProductId(undefined)} onSaved={() => { setProductId(undefined); onChanged(); }} />}
       {followup && <PurchaseFollowup kind={followup} order={order} onClose={() => setFollowup(undefined)} onSaved={onChanged} />}
     </>}
   </Drawer>;
 }
 
-interface PurchaseValues { store_id: string; supplier_id: string; order_date: string; expected_date?: string; planned_ship_date?: string; already_ordered?: boolean; currency: string; payment_terms?: string; notes?: string; lines: { product_id: string; quantity: number; unit_price: string }[] }
-function PurchaseEditor({ order, stores, selectedStore, onClose, onSaved }: { order: PurchaseOrder | null; stores: Store[]; selectedStore: string; onClose: () => void; onSaved: () => void }) {
+interface PurchaseValues { store_id: string; supplier_id: string; order_date: string; expected_date?: string; planned_ship_date?: string; already_ordered?: boolean; currency: string; payment_terms?: string; notes?: string; lines: { product_id: string; quantity: number; unit_price: string; internal_sku?: string; product_name?: string; product_name_zh?: string; units_per_carton?: number | null; unit_weight_kg?: string | null }[] }
+function PurchaseEditor({ user, order, stores, selectedStore, onClose, onSaved }: { user: User; order: PurchaseOrder | null; stores: Store[]; selectedStore: string; onClose: () => void; onSaved: () => void }) {
   const [form] = Form.useForm<PurchaseValues>();
+  const [editingProduct, setEditingProduct] = useState<string>();
+  const rows = Form.useWatch('lines', { form, preserve: true }) || [];
+  const updateProduct = (product: { id: string; name?: string; name_zh?: string; internal_sku?: string; units_per_carton?: number | null; unit_weight_kg?: string | null }) => {
+    form.setFieldsValue({ lines: form.getFieldValue('lines').map((line: PurchaseValues['lines'][number]) => line?.product_id === product.id ? { ...line, product_name: product.name, product_name_zh: product.name_zh, internal_sku: product.internal_sku, units_per_carton: product.units_per_carton, unit_weight_kg: product.unit_weight_kg } : line) });
+  };
   const [token] = useState(requestId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -98,17 +109,18 @@ function PurchaseEditor({ order, stores, selectedStore, onClose, onSaved }: { or
   };
   return <Modal open title={order ? '编辑采购草稿' : '新增采购单'} width={1000} onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText={order ? "保存草稿" : "保存采购单"}>
     <ErrorNotice error={error} />
-    <Form form={form} layout="vertical" onFinish={save} initialValues={order ? { ...order, expected_date: order.expected_date || '', planned_ship_date: order.planned_ship_date || '', lines: order.lines.map(line => ({ product_id: line.product_id, quantity: line.quantity, unit_price: line.unit_price })) } : { store_id: storeParam(selectedStore), order_date: dayjs().format('YYYY-MM-DD'), currency: 'CNY', lines: [{ quantity: 1, unit_price: '0' }] }}>
+    <Form form={form} layout="vertical" onFinish={save} initialValues={order ? { ...order, expected_date: order.expected_date || '', planned_ship_date: order.planned_ship_date || '', lines: order.lines } : { store_id: storeParam(selectedStore), order_date: dayjs().format('YYYY-MM-DD'), currency: 'CNY', lines: [{ quantity: 1, unit_price: '0' }] }}>
       <Row gutter={16}><Col span={12}><StoreField stores={stores} fixed={!!order} /></Col><Col span={12}><Form.Item name="supplier_id" label="供应商" rules={required}><RemoteSelect path="/suppliers?is_active=true" initialLabel={order?.supplier_name} /></Form.Item></Col></Row>
       <Row gutter={16}><Col span={8}><Form.Item name="order_date" label="采购日期" rules={required}><Input type="date" /></Form.Item></Col><Col span={8}><Form.Item name="expected_date" label="预计到货"><Input type="date" /></Form.Item></Col><Col span={8}><Form.Item name="currency" label="币种" rules={required}><Select options={['CNY', 'USD', 'EUR', 'GBP'].map(value => ({ value, label: value }))} /></Form.Item></Col></Row>
       {!order && <Form.Item name="already_ordered" label="已向供应商下单" valuePropName="checked" extra="补录已下单采购时开启；仅登记事实，不发送订单。"><Switch /></Form.Item>}
       <Form.Item name="planned_ship_date" label="预计发货日" extra="用于生产确认和发货提醒；可以留空，确定后再补充。"><Input type="date" /></Form.Item>
       <Form.List name="lines" rules={[{ validator: async (_, lines) => { if (!lines?.length) throw new Error('至少添加一行商品'); if (lines.length > 100) throw new Error('最多 100 行'); } }]}>{(fields, { add, remove }, { errors }) => <>
-        {fields.map(field => <Row gutter={12} key={field.key} align="middle"><Col span={12}><Form.Item name={[field.name, 'product_id']} label="商品 / SKU" rules={required}><RemoteSelect path="/products?is_active=true" initialLabel={order?.lines[field.name]?.product_name} /></Form.Item></Col><Col span={5}><Form.Item name={[field.name, 'quantity']} label="采购数量" rules={required}><QuantityInput /></Form.Item></Col><Col span={5}><Form.Item name={[field.name, 'unit_price']} label="单价" rules={required}><InputNumber stringMode min="0" max="99999999999999.9999" precision={4} style={{ width: '100%' }} /></Form.Item></Col><Col span={2}><Button aria-label="移除商品行" type="text" icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} /></Col></Row>)}
+        {fields.map(field => <div key={field.key}><Row gutter={12} key={field.key} align="middle"><Col span={12}><Form.Item name={[field.name, 'product_id']} label="商品 / SKU" rules={required}><RemoteSelect path="/products?is_active=true" selectedLabel={[rows[field.name]?.internal_sku, rows[field.name]?.product_name_zh || rows[field.name]?.product_name].filter(Boolean).join(' · ')} onRecord={updateProduct} /></Form.Item></Col><Col span={5}><Form.Item name={[field.name, 'quantity']} label="采购数量" rules={required}><QuantityInput /></Form.Item></Col><Col span={5}><Form.Item name={[field.name, 'unit_price']} label="单价" rules={required}><InputNumber stringMode min="0" max="99999999999999.9999" precision={4} style={{ width: '100%' }} /></Form.Item></Col><Col span={2}><Button aria-label="移除商品行" type="text" icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} /></Col></Row><Space wrap style={{ marginBottom: 16 }}><span>{cartonText(rows[field.name]?.quantity || 0, rows[field.name]?.units_per_carton)}</span><span>总重量：{totalWeight(rows[field.name]?.quantity || 0, rows[field.name]?.unit_weight_kg)}</span>{user.permissions.includes('products.manage') && rows[field.name]?.product_id && <Button type="link" onClick={() => setEditingProduct(rows[field.name].product_id)}>编辑商品信息</Button>}</Space></div>)}
         <Form.ErrorList errors={errors} /><Button block type="dashed" icon={<PlusOutlined />} disabled={fields.length >= 100} onClick={() => add({ quantity: 1, unit_price: '0' })}>添加商品</Button>
       </>}</Form.List>
       <Form.Item name="payment_terms" label="付款约定" style={{ marginTop: 20 }}><Input maxLength={2000} /></Form.Item><Form.Item name="notes" label="采购备注"><Input.TextArea rows={2} maxLength={5000} /></Form.Item>
     </Form>
+    {editingProduct && <ProductQuickEditor id={editingProduct} onClose={() => setEditingProduct(undefined)} onSaved={product => { updateProduct(product); setEditingProduct(undefined); }} />}
   </Modal>;
 }
 

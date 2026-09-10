@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from app.catalog_schemas import Currency, Money
+from app.catalog_schemas import CartonSize, Currency, Money
 from app.schemas import Input
 
 Identifier = Annotated[str, Field(min_length=1, max_length=36)]
@@ -50,7 +50,12 @@ class PurchaseCreate(PurchaseInput):
     already_ordered: bool = False
 
 
+class ShipmentLinePacking(Input):
+    units_per_carton: CartonSize
+
+
 class ShipmentItem(Input):
+    units_per_carton: CartonSize | None = None
     product_id: Identifier
     quantity: Quantity
 

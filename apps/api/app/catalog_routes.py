@@ -33,8 +33,8 @@ def money(value):
 
 
 def product_out(record):
-    fields = "id internal_sku name name_zh brand category specifications material title description asin fnsku image_url image_urls bullet_points amazon_url currency is_active notes review_notes source_data source_filename source_row created_at updated_at"
-    return {**serialize(record, fields), "sale_price": money(record.sale_price), "original_sale_price": money(record.original_sale_price)}
+    fields = "id internal_sku name name_zh units_per_carton brand category specifications material title description asin fnsku image_url image_urls bullet_points amazon_url currency is_active notes review_notes source_data source_filename source_row created_at updated_at"
+    return {**serialize(record, fields), "unit_weight_kg": money(record.unit_weight_kg), "sale_price": money(record.sale_price), "original_sale_price": money(record.original_sale_price)}
 
 
 def supplier_out(record):

@@ -30,19 +30,20 @@ export function requestId(): string {
   const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-interface OptionRecord { id: string; name?: string; display_name?: string; internal_sku?: string; code?: string; number?: string; supplier_name?: string }
-export function RemoteSelect({ path, value, onChange, initialLabel, placeholder = '输入名称搜索并选择', disabled = false }: {
-  path: string | null; value?: string; onChange?: (id: string) => void; initialLabel?: string; placeholder?: string; disabled?: boolean;
+export interface OptionRecord { name_zh?: string; units_per_carton?: number | null; unit_weight_kg?: string | null; id: string; name?: string; display_name?: string; internal_sku?: string; code?: string; number?: string; supplier_name?: string }
+export function RemoteSelect({ path, value, onChange, onRecord, initialLabel, selectedLabel, placeholder = '输入名称搜索并选择', disabled = false }: {
+  onRecord?: (record: OptionRecord) => void; path: string | null; value?: string; onChange?: (id: string) => void; initialLabel?: string; selectedLabel?: string; placeholder?: string; disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [selection, setSelection] = useState<{ value: string; label: string }>();
   const q = useDebouncedValue(search);
   const resource = useResource<ListResult<OptionRecord>>(open && path ? `${path}${path.includes('?') ? '&' : '?'}limit=30&q=${encodeURIComponent(q)}` : null);
-  const choices = (resource.data?.items ?? []).map(item => ({ value: item.id, label: [item.internal_sku || item.code || item.number, item.name || item.display_name || item.supplier_name].filter(Boolean).join(' · ') }));
+  const choices = (resource.data?.items ?? []).map(item => ({ value: item.id, label: [item.internal_sku || item.code || item.number, item.name_zh || item.name || item.display_name || item.supplier_name].filter(Boolean).join(' · ') }));
   if (value && !choices.some(item => item.value === value)) choices.unshift({ value, label: selection?.value === value ? selection.label : initialLabel || value });
+  if (value && selectedLabel) { const selected = choices.find(item => item.value === value); if (selected) selected.label = selectedLabel; }
   return <Select showSearch={{ filterOption: false, onSearch: setSearch }} value={value} disabled={disabled || !path} placeholder={placeholder} loading={resource.loading}
-    options={choices} onOpenChange={setOpen} onChange={id => { setSelection(choices.find(item => item.value === id)); onChange?.(id); }}
+    options={choices} onOpenChange={setOpen} onChange={id => { setSelection(choices.find(item => item.value === id)); onChange?.(id); const record = resource.data?.items.find(item => item.id === id); if (record) onRecord?.(record); }}
     notFoundContent={resource.error ? <Alert type="error" title={resource.error} /> : resource.loading ? '加载中…' : '没有匹配档案，请先新增或调整搜索词'} />;
 }
 export const activeWarehousesPath = queryPath('/warehouses', { is_active: true });
