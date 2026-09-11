@@ -45,18 +45,18 @@ def batches(db: DB, user: Reader, page: Page, store_id: str | None = None, kind:
 
 
 @router.get('/report-imports/{identifier}')
-def batch_detail(identifier: str, db: DB, user: Reader):
+def batch_detail(identifier: str, db: DB, user: Reader, request: Request):
     batch = get_batch(db, user, identifier)
-    return batch_out(batch, compare(db, batch) if batch.result is None else None) | {'can_confirm': user.id == batch.owner_id}
+    return batch_out(batch, compare(db, batch, request.app.state.settings) if batch.result is None else None) | {'can_confirm': user.id == batch.owner_id}
 
 
 @router.get('/report-imports/{identifier}/rows')
-def batch_rows(identifier: str, db: DB, user: Reader, page: Page, action: Literal['create', 'update', 'skip', 'conflict', 'error'] | None = None):
+def batch_rows(identifier: str, db: DB, user: Reader, page: Page, request: Request, action: Literal['create', 'update', 'skip', 'conflict', 'error'] | None = None):
     batch = get_batch(db, user, identifier)
     if batch.result is not None:
         rows = [{'row': row['row'], 'action': 'source', 'data': row['data'], 'message': '该批次来源数据，确认结果见批次摘要'} for row in batch.parsed_rows]
     else:
-        rows = [{key: row[key] for key in ['row', 'action', 'message', 'data']} for row in compare(db, batch)['rows']]
+        rows = [{key: row[key] for key in ['row', 'action', 'message', 'data']} for row in compare(db, batch, request.app.state.settings)['rows']]
     rows += [{'row': error['row'], 'action': 'error', 'data': None, 'message': error['message']} for error in batch.errors]
     rows.sort(key=lambda row: row['row'])
     if action:
@@ -65,8 +65,8 @@ def batch_rows(identifier: str, db: DB, user: Reader, page: Page, action: Litera
 
 
 @router.post('/report-imports/{identifier}/confirm')
-def confirm(identifier: str, payload: Confirmation, db: DB, user: Writer):
-    return confirm_import(db, user, identifier, payload.verification_token)
+def confirm(identifier: str, payload: Confirmation, db: DB, user: Writer, request: Request):
+    return confirm_import(db, user, identifier, payload.verification_token, request.app.state.settings)
 
 
 def records_query(model, user, store_id, start_date, end_date, q, sku=''):

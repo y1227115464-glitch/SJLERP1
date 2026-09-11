@@ -13,7 +13,7 @@ import type { User } from './types';
 
 const statusLabels: Record<string, string> = { Pending: '待处理', Shipped: '已发货', Cancelled: '已取消', Unshipped: '未发货', 'Partially Shipped': '部分发货' };
 const percent = (value: unknown) => value == null ? '—' : `${(Number(value) * 100).toFixed(2)}%`;
-const labels: Record<string, string> = { amazon_order_id: '亚马逊订单号', merchant_order_id: '商家订单号', sales_channel: '销售站点', sku: 'Seller SKU', asin: 'ASIN',
+const labels: Record<string, string> = { amazon_order_id: '亚马逊订单号', order_item_id: '订单明细编号', merchant_order_id: '商家订单号', sales_channel: '销售站点', sku: 'Seller SKU', asin: 'ASIN',
   product_name: '商品名称', order_status: '订单状态', item_status: '商品状态', fulfillment_channel: '配送渠道', purchase_date: '下单时间（UTC）', last_updated_date: '来源更新时间（UTC）',
   quantity: '数量', currency: '币种', item_price: '商品金额', item_tax: '商品税', shipping_price: '运费', shipping_tax: '运费税', gift_wrap_price: '礼品包装费', gift_wrap_tax: '礼品税',
   item_promotion_discount: '商品优惠', ship_promotion_discount: '运费优惠', net_amount: '不含税订单净额', report_date: '广告日期', start_date: '开始日期', end_date: '结束日期',

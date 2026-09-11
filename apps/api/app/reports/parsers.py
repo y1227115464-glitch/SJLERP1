@@ -18,6 +18,7 @@ from app.core.api import fail
 MAX_ROWS = 10000
 MAX_COLUMNS = 80
 AD_PARSER_VERSION = 'amazon-ads-v2'
+SALES_PARSER_VERSION = 'amazon-sales-v2'
 MONEY_FIELDS = ['item-price', 'item-tax', 'shipping-price', 'shipping-tax', 'gift-wrap-price', 'gift-wrap-tax',
                 'item-promotion-discount', 'ship-promotion-discount']
 SALES_REQUIRED = ['amazon-order-id', 'purchase-date', 'last-updated-date', 'order-status', 'fulfillment-channel',
@@ -87,6 +88,16 @@ def calendar_date(value):
         raise ValueError('日期须为 YYYY-MM-DD 或 Excel 日期') from error
 
 
+def sales_legacy_key(data):
+    return fingerprint([data[field] for field in ['sales_channel', 'amazon_order_id', 'sku']])
+
+
+def sales_key(data):
+    if data.get('order_item_id'):
+        return fingerprint(['order-item', data['sales_channel'], data['amazon_order_id'], data['order_item_id']])
+    return sales_legacy_key(data)
+
+
 def sales_row(raw):
     data = {key.replace('-', '_'): clean(raw.get(key), key, 120 if key != 'product-name' else 2000)
             for key in ['amazon-order-id', 'sales-channel', 'sku', 'asin', 'order-status', 'item-status', 'fulfillment-channel', 'product-name']}
@@ -107,7 +118,10 @@ def sales_row(raw):
         data['net_amount'] = format(sum((Decimal(data[key] or '0') * sign for key, sign in [
             ('item_price', 1), ('shipping_price', 1), ('gift_wrap_price', 1), ('item_promotion_discount', -1), ('ship_promotion_discount', -1)]), Decimal(0)), '.4f')
     data['merchant_order_id'] = clean(raw.get('merchant-order-id'), 'merchant-order-id', 120, required=False)
-    key = fingerprint([data[field] for field in ['sales_channel', 'amazon_order_id', 'sku']])
+    item_id = clean(raw.get('order-item-id'), 'order-item-id', 120, required=False)
+    if item_id:
+        data['order_item_id'] = item_id
+    key = sales_key(data)
     return key, key, data
 
 
@@ -187,6 +201,7 @@ def parse_report(kind, content):
     if kind not in {'sales', 'ads'}:
         fail(422, 'invalid_report_type', '请选择销售或广告报告')
     rows, errors, duplicates, source_total, seen = [], [], 0, 0, {}
+    sales_groups = {}
     generator = text_rows(content) if kind == 'sales' else excel_rows(content)
     try:
         headers = next(generator, None)
@@ -213,13 +228,21 @@ def parse_report(kind, content):
                     raise ValueError('列数与表头不一致')
                 raw = dict(zip(headers, values))
                 key, identity, data = (sales_row if kind == 'sales' else ad_row)(raw)
+                if kind == 'sales':
+                    group = sales_legacy_key(data)
+                    has_item_id = bool(data.get('order_item_id'))
+                    if group in sales_groups and sales_groups[group] != has_item_id:
+                        raise ValueError('同订单同 SKU 的明细编号部分缺失，请补全 order-item-id 后重新上传')
+                    sales_groups[group] = has_item_id
                 value_hash = fingerprint(data)
                 if key in seen:
                     if kind == 'ads' and data.get('report_date'):
                         rows[seen[key][1]] = {'row': index, 'key': key, 'identity': identity, 'hash': value_hash, 'data': data}
                         seen[key] = (value_hash, seen[key][1])
                     elif seen[key][0] != value_hash:
-                        raise ValueError('文件内同一业务键内容冲突，无法区分重复导出与同 SKU 拆行，请核对来源')
+                        if kind == 'sales' and data.get('order_item_id'):
+                            raise ValueError(f'与源行 {rows[seen[key][1]]["row"]} 的 order-item-id 相同但内容不同，请核对来源')
+                        raise ValueError('文件内同一业务键内容冲突，缺少 order-item-id，无法区分重复导出与同 SKU 拆行，请核对来源')
                     duplicates += 1
                     continue
                 seen[key] = (value_hash, len(rows))

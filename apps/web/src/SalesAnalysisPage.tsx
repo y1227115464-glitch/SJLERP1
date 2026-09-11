@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Button, Card, Col, InputNumber, Row, Select, Statistic, Table, Tabs, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ImportOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
-import { ErrorNotice, PageHeading, useResource } from './common';
+import { ErrorNotice, PAGE_SIZE, PageHeading, useResource } from './common';
 import { queryPath } from './CatalogShared';
 import { ReportRecordsPage } from './ReportRecords';
 import { ReportDateFilter } from './ReportDateFilter';
@@ -44,7 +44,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
   const path = queryPath('/sales-analysis', { ...context, ...search, cad_per_usd: String(cad), mxn_per_usd: String(mxn), sort_by: sort, descending: sort === 'sku' ? 'false' : 'true' });
   const [cursor, setCursor] = useState({ path, page: 1 });
   const page = cursor.path === path ? cursor.page : 1;
-  const resource = useResource<SalesAnalysis>(`${path}&limit=20&offset=${(page - 1) * 20}`);
+  const resource = useResource<SalesAnalysis>(`${path}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`);
   const data = resource.data;
   const totals = data?.totals;
   const costCell = (value: string | null, row: SalesAnalysisRow) => value == null
@@ -90,7 +90,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' }, { value: 'sku', label: 'SKU 名称' },
     ]} />}>
       <Table<SalesAnalysisRow> rowKey="key" className="sales-analysis-table" loading={resource.loading} dataSource={data?.items ?? []} columns={columns}
-        scroll={{ x: 1655 }} pagination={{ current: page, pageSize: 20, total: data?.total ?? 0, showSizeChanger: false,
+        scroll={{ x: 1655 }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
           showTotal: total => `共 ${total} 个店铺 SKU`, onChange: page => setCursor({ path, page }) }}
         expandable={{ expandedRowRender: row => <div className="analysis-row-note"><span>订单来源 {row.sales_rows} 行 · 广告日报 {row.ad_rows} 行 · 使用 {row.cost_versions} 个费用版本</span>
           <span>来源 SKU：{row.source_skus.join('、')}</span>{row.issues.map(issue => <Tag key={issue} color="warning">{issue}</Tag>)}<Button size="small" onClick={() => setCosts({ sku: row.sku })}>查看 SKU 费用</Button></div> }}

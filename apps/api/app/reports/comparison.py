@@ -5,7 +5,8 @@ from sqlalchemy import select
 
 from app.core.security import aware
 from app.reports.models import AdRecord, SalesRecord
-from app.reports.parsers import AD_PARSER_VERSION, fingerprint
+from app.reports.parsers import AD_PARSER_VERSION, SALES_PARSER_VERSION, fingerprint
+from app.reports.sales_identity import sales_existing
 
 
 def chunks(values, size=300):
@@ -26,10 +27,13 @@ def overlapping_keys(intervals):
     return conflicts
 
 
-def compare(db, batch):
+def compare(db, batch, settings=None):
     model = SalesRecord if batch.kind == 'sales' else AdRecord
     existing, intervals = {}, defaultdict(list)
-    for keys in chunks(row['key'] for row in batch.parsed_rows):
+    sales_conflicts, restored = {}, {}
+    if batch.kind == 'sales':
+        existing, sales_conflicts, restored = sales_existing(db, batch, settings, chunks)
+    for keys in chunks(row['key'] for row in batch.parsed_rows if batch.kind == 'ads'):
         columns = [model.id, model.natural_key, model.value_hash, model.import_id]
         columns.append(SalesRecord.last_updated_date if batch.kind == 'sales' else AdRecord.latest_report_at)
         existing.update({row.natural_key: row for row in db.execute(select(*columns).where(model.store_id == batch.store_id, model.natural_key.in_(keys)))})
@@ -51,12 +55,18 @@ def compare(db, batch):
         old = existing.get(row['key'])
         action, message = 'create', '新增记录'
         data = row['data']
-        if batch.kind == 'ads' and batch.parser_version != AD_PARSER_VERSION:
+        old_data = restored.get(old.id, old.data) if old and batch.kind == 'sales' else None
+        old_hash = fingerprint(old_data) if old_data is not None else old.value_hash if old else None
+        if batch.kind == 'sales' and batch.parser_version != SALES_PARSER_VERSION:
+            action, message = 'conflict', '销售去重规则已更新，请重新上传原文件后确认'
+        elif row['key'] in sales_conflicts:
+            action, message = 'conflict', sales_conflicts[row['key']]
+        elif batch.kind == 'ads' and batch.parser_version != AD_PARSER_VERSION:
             action, message = 'conflict', '广告去重规则已更新，请重新上传文件后确认'
         elif row['key'] in overlaps:
             action, message = 'conflict', '与同一广告商品的已有或本批统计区间重叠，请使用一致的日期粒度'
         elif old:
-            if old.value_hash == row['hash']:
+            if old_hash == row['hash']:
                 action, message = 'skip', '该记录已存在且内容相同'
             elif batch.kind == 'sales':
                 incoming = datetime.fromisoformat(data['last_updated_date'])
@@ -72,10 +82,16 @@ def compare(db, batch):
             else:
                 action, message = 'update', ('同一天的 SKU、广告活动和广告组相同，新导入覆盖原记录' if data.get('report_date')
                                              else '相同广告商品和统计区间，替换指标而非累加')
+        identity_update = None
+        if old and batch.kind == 'sales' and old.natural_key != row['key'] and action == 'skip':
+            identity_update = {'id': old.id, 'natural_key': row['key'], 'data': old_data, 'value_hash': old_hash}
+            message += '；补全历史订单明细编号，保留原数量、金额与来源'
         counts[action] += 1
         watermark = aware(old.latest_report_at) if old and batch.kind == 'ads' else None
-        signature.append([row['key'], row['hash'], action, old.value_hash if old else '', old.import_id if old else '', watermark.isoformat() if watermark else ''])
+        signature.append([row['key'], row['hash'], action, old.value_hash if old else '', old.import_id if old else '',
+                          watermark.isoformat() if watermark else '', old_hash, old.natural_key if old else '', identity_update])
         results.append({'row': row['row'], 'key': row['key'], 'existing_id': old.id if old else None,
                         'advance_watermark': bool(watermark and aware(batch.created_at) > watermark),
+                        'identity_update': identity_update,
                         'action': action, 'message': message, 'data': data})
     return {'rows': results, 'counts': counts, 'verification_token': fingerprint([batch.id, signature, batch.errors])}

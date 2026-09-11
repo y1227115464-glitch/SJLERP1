@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Alert, App as AntApp, Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Switch, Table, Tag, Tooltip } from 'antd';
 import { DownloadOutlined, EditOutlined, KeyOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, ShopOutlined } from '@ant-design/icons';
 import { api, download, errorText } from './api';
-import { ActiveTag, dateTime, EmptyState, ErrorNotice, PageHeading, permissionLabels, roleLabels, usePagedList, useResource } from './common';
+import { ActiveTag, dateTime, EmptyState, ErrorNotice, PAGE_SIZE, PageHeading, permissionLabels, roleLabels, usePagedList, useResource } from './common';
 import type { ListResult, Role, RoleKey, Store, User } from './types';
 
 interface StoreValues { name: string; code: string; legal_entity: string; brand: string; marketplace: string; currency: string; is_active: boolean }
@@ -28,7 +28,7 @@ export function StoresPage({ user, stores, selectedStore, refreshStores }: { use
   return <><PageHeading eyebrow="STORE DIRECTORY" title="店铺管理" description="统一维护店铺档案，关联品牌、经营主体与美国站业务。" extra={<Space>{user.permissions.includes('stores.export') && <Button icon={<DownloadOutlined />} loading={exporting} onClick={async () => { setExporting(true); try { await download('/stores/export', '书剑录-授权店铺.csv'); } catch (cause) { message.error(errorText(cause)); } finally { setExporting(false); } }}>导出授权店铺</Button>}{canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => edit(null)}>新增店铺</Button>}</Space>} />
     <div className="summary-strip"><div><span>授权店铺</span><strong>{stores.length}</strong><small>家</small></div><div><span>启用中</span><strong>{stores.filter(store => store.is_active).length}</strong><small>家</small></div><p>经营数据按店铺隔离，报表导入后分别归集。</p></div>
     <Card className="section-card" title="店铺档案" extra={<Button icon={<ReloadOutlined />} onClick={() => void refreshStores()}>刷新</Button>}><div className="table-toolbar"><Input allowClear prefix={<SearchOutlined />} aria-label="搜索店铺" placeholder="搜索店铺、编码、品牌或主体" value={query} onChange={event => setQuery(event.target.value)} style={{ maxWidth: 360 }} /><span className="subtle-text">当前筛选 {visibleStores.length} 家店铺</span></div>
-      <Table<Store> rowKey="id" dataSource={visibleStores} scroll={{ x: 1050 }} pagination={{ pageSize: 10, showSizeChanger: false, showTotal: total => `共 ${total} 家店铺` }} locale={{ emptyText: <EmptyState text={query ? '未找到匹配的店铺，请调整搜索条件。' : '暂无店铺档案，先添加店铺或联系管理员授权。'} /> }} columns={[
+      <Table<Store> rowKey="id" dataSource={visibleStores} scroll={{ x: 1050 }} pagination={{ pageSize: PAGE_SIZE, showSizeChanger: false, showTotal: total => `共 ${total} 家店铺` }} locale={{ emptyText: <EmptyState text={query ? '未找到匹配的店铺，请调整搜索条件。' : '暂无店铺档案，先添加店铺或联系管理员授权。'} /> }} columns={[
         { title: '店铺 / 编码', dataIndex: 'name', width: 230, render: (value: string, record) => <div className="table-name"><span className="store-avatar"><ShopOutlined /></span><div><strong>{value}</strong><small>{record.code}</small></div></div> },
         { title: '经营主体', dataIndex: 'legal_entity', render: (value: string) => value || '—' }, { title: '品牌', dataIndex: 'brand', render: (value: string) => value || '—' },
         { title: '站点 / 币种', dataIndex: 'marketplace', render: (value: string, record) => <div>{value === 'US' ? '美国 US' : value}<small className="cell-secondary">{record.currency}</small></div> },

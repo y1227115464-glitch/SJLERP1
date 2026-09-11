@@ -10,7 +10,7 @@ from app.core.security import aware, can_access_store, has_permission
 from app.models import Store, User, new_id, now
 from app.reports.comparison import chunks, compare
 from app.reports.models import AdRecord, ReportImport, SalesRecord
-from app.reports.parsers import AD_PARSER_VERSION, ad_keys, parse_report
+from app.reports.parsers import AD_PARSER_VERSION, SALES_PARSER_VERSION, ad_keys, parse_report
 
 
 def batch_out(batch, comparison=None):
@@ -49,7 +49,7 @@ def create_preview(db, user, file, kind, store_id, settings):
     parsed = parse_report(kind, content)
     batch = ReportImport(id=new_id(), owner_id=user.id, store_id=store_id, store=store, kind=kind, filename=filename,
         file_hash=hashlib.sha256(content).hexdigest(), storage_key=new_id(), created_at=now(),
-        parser_version=AD_PARSER_VERSION if kind == 'ads' else 'amazon-v1',
+        parser_version=AD_PARSER_VERSION if kind == 'ads' else SALES_PARSER_VERSION,
         parsed_rows=parsed['rows'], errors=parsed['errors'], source_total=parsed['source_total'], duplicate_count=parsed['duplicate_count'],
         row_count=len(parsed['rows']), error_count=len(parsed['errors']))
     root = settings.storage_path.resolve()
@@ -61,7 +61,7 @@ def create_preview(db, user, file, kind, store_id, settings):
             output.write(content)
         db.add(batch)
         db.flush()
-        comparison = compare(db, batch)
+        comparison = compare(db, batch, settings)
         audit(db, user, 'reports.preview', 'report_import', batch.id, '预览亚马逊报表；未变更销售或广告事实', store_id)
         db.commit()
     except BaseException:
@@ -92,7 +92,7 @@ def next_hash(row):
     return fingerprint(row['data'])
 
 
-def confirm_import(db, user, identifier, verification_token):
+def confirm_import(db, user, identifier, verification_token, settings=None):
     if db.bind.dialect.name == 'sqlite':
         connection = db.connection()
         if not connection.connection.driver_connection.in_transaction:
@@ -110,7 +110,7 @@ def confirm_import(db, user, identifier, verification_token):
     db.refresh(batch)
     if batch.result is not None:
         return batch_out(batch)
-    comparison = compare(db, batch)
+    comparison = compare(db, batch, settings)
     if batch.errors or comparison['counts']['conflict']:
         fail(409, 'import_has_errors', '存在错误或冲突，未导入任何记录；请查看批次明细')
     if comparison['verification_token'] != verification_token:
@@ -120,6 +120,10 @@ def confirm_import(db, user, identifier, verification_token):
         rows = [fact_values(batch, row) for row in comparison['rows'] if row['action'] == action]
         for group in chunks(rows):
             db.execute(insert(model) if action == 'create' else update(model), group)
+    if batch.kind == 'sales':
+        identities = [row['identity_update'] for row in comparison['rows'] if row['identity_update']]
+        for group in chunks(identities):
+            db.execute(update(SalesRecord), group)
     if batch.kind == 'ads':
         # A newer identical report confirms the version even when its metrics are unchanged.
         watermarks = [{'id': row['existing_id'], 'latest_report_at': batch.created_at}

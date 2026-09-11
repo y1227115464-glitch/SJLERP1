@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Alert, App as AntApp, Button, Card, Descriptions, Drawer, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Upload } from 'antd';
 import { CheckCircleOutlined, EditOutlined, FileTextOutlined, ImportOutlined, LinkOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import { api, errorText } from './api';
-import { ActiveTag, dateTime, EmptyState, ErrorNotice, PageHeading, usePagedList, useResource } from './common';
+import { ActiveTag, dateTime, EmptyState, ErrorNotice, PAGE_SIZE, PageHeading, usePagedList, useResource } from './common';
 import { money, ProductImage, queryPath, ReviewTag, safeSourceUrl, SharedCatalogNotice, useDebouncedValue } from './CatalogShared';
 import type { Product, ProductImportPreview, ProductImportResult, ProductMeta, PriceUnit } from './catalog-types';
 import type { User } from './types';
@@ -108,7 +108,7 @@ function ProductImportModal({ onClose, onImported }: { onClose: () => void; onIm
       {unit === 'unknown' && <p className="catalog-field-help">价格单位未知时，参考售价留空并标记待核对，原始价格值仍会归档。</p>}
       {alreadyExists && <Alert className="page-notice" type="success" showIcon title="全部商品已存在，无需再次导入" description="原有商品与人工编辑保持不变，可关闭预览后查看商品档案。" />}
       {preview && <><div className="summary-strip catalog-summary"><div><span>文件行数</span><strong>{preview.total}</strong></div><div><span>预计新增</span><strong>{preview.create_count}</strong></div><div><span>已存在跳过</span><strong>{preview.skip_count}</strong></div></div>{preview.errors.length > 0 && <Alert className="page-notice" type="error" showIcon title="请先修正以下错误再重新预览" description={<ul className="catalog-note-list">{preview.errors.map((item, index) => <li key={index}>{item}</li>)}</ul>} />}{preview.warnings.length > 0 && <Alert className="page-notice" type="warning" showIcon title="导入提醒" description={<ul className="catalog-note-list">{preview.warnings.map((item, index) => <li key={index}>{item}</li>)}</ul>} />}
-        <Table<ProductImportPreview['rows'][number]> size="small" rowKey="row" dataSource={preview.rows} pagination={{ pageSize: 10, showSizeChanger: false, showTotal: total => `共 ${total} 行` }} scroll={{ x: 750 }} columns={[
+        <Table<ProductImportPreview['rows'][number]> size="small" rowKey="row" dataSource={preview.rows} pagination={{ pageSize: PAGE_SIZE, showSizeChanger: false, showTotal: total => `共 ${total} 行` }} scroll={{ x: 750 }} columns={[
           { title: '行号', dataIndex: 'row', width: 65 }, { title: '内部 SKU', dataIndex: 'internal_sku', width: 145 }, { title: '商品名称', dataIndex: 'name', width: 280, render: (value: string) => <span className="catalog-wrap">{value}</span> }, { title: '处理方式', dataIndex: 'action', width: 100, render: (value: 'create' | 'skip' | 'error') => <Tag color={value === 'create' ? 'success' : value === 'error' ? 'error' : 'default'}>{value === 'create' ? '新增' : value === 'skip' ? '跳过' : '错误'}</Tag> }, { title: '待核对事项', dataIndex: 'review_notes', render: (notes: string[]) => notes.length ? <ul className="catalog-note-list">{notes.map((note, index) => <li key={index}>{note}</li>)}</ul> : '—' },
         ]} />
       </>}

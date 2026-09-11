@@ -77,6 +77,23 @@ def test_sales_invalid_conflicting_keys_and_cancelled_blank_amount():
     assert row['data']['currency'] is None and row['data']['net_amount'] is None
 
 
+def test_sales_item_ids_preserve_split_and_identical_lines():
+    from app.reports.parsers import parse_report
+    rows = [sale(**{'order-item-id ': '001'}), sale(**{'order-item-id ': '002'}),
+            sale(quantity='0', currency='', **{'order-item-id ': '003', 'item-status': 'Cancelled', 'item-price': ''})]
+    parsed = parse_report('sales', sales_file([*rows, rows[0]]))
+    assert not parsed['errors'] and len(parsed['rows']) == 3 and parsed['duplicate_count'] == 1
+    assert [row['data']['order_item_id'] for row in parsed['rows']] == ['001', '002', '003']
+    assert sum(row['data']['quantity'] for row in parsed['rows']) == 4
+    assert parse_report('sales', sales_file([rows[0], dict(rows[0], quantity='3')]))['errors']
+
+
+def test_sales_mixed_missing_item_ids_are_atomic_errors():
+    from app.reports.parsers import parse_report
+    for rows in [[sale(), sale(**{'order-item-id': '001'})], [sale(**{'order-item-id': '001'}), sale()]]:
+        assert '部分缺失' in parse_report('sales', sales_file(rows))['errors'][0]['message']
+
+
 def test_ad_parser_reads_beyond_bad_dimension_and_normalizes_money():
     from app.reports.parsers import parse_report
     result = parse_report('ads', ads_file([ad(), ad(广告SKU='SKU-B')]))

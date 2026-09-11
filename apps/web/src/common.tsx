@@ -6,6 +6,8 @@ import dayjs from 'dayjs';
 import { api, errorText } from './api';
 import type { ListResult } from './types';
 
+export const PAGE_SIZE = 200;
+
 export function useResource<T>(path: string | null) {
   const [snapshot, setSnapshot] = useState<{ path: string | null; data: T | null; loading: boolean; error: string }>({ path: null, data: null, loading: true, error: '' });
   const [version, setVersion] = useState(0);
@@ -26,7 +28,7 @@ export function usePagedList<T>(path: string) {
   const [cursor, setCursor] = useState({ path, page: 1 });
   useEffect(() => { setCursor({ path, page: 1 }); }, [path]);
   const page = cursor.path === path ? cursor.page : 1;
-  const pageSize = 20;
+  const pageSize = PAGE_SIZE;
   const resource = useResource<ListResult<T>>(`${path}${path.includes('?') ? '&' : '?'}limit=${pageSize}&offset=${(page - 1) * pageSize}`);
   return { ...resource, pagination: { current: page, pageSize, total: resource.data?.total ?? 0,
     onChange: (next: number) => setCursor({ path, page: next }), showSizeChanger: false, showTotal: (total: number) => `共 ${total} 条` } };
