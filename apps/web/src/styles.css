@@ -136,3 +136,11 @@
 .task-stat strong { display: block; font-size: 30px; line-height: 1.5; color: #182844; font-variant-numeric: tabular-nums; }
 .task-stat small { color: #697586; }
 .task-shortcuts, .task-source-card { margin-top: 24px; }
+.analysis-metrics { margin: 20px 0; }
+.analysis-exchange { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; color: #63748a; font-size: 12px; }
+.analysis-negative { color: #cf1322; font-weight: 600; }
+.analysis-alert { margin-top: 12px; }
+.analysis-cost-toolbar { margin: 20px 0; }
+.analysis-row-note { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sales-analysis-table .ant-table-cell { font-variant-numeric: tabular-nums; }
+.sales-analysis-table .ant-table-summary { background: #f1f5f9; }

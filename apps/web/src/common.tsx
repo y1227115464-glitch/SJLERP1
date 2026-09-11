@@ -71,7 +71,7 @@ export const permissionLabels: Record<string, string> = {
   'inventory.view': '查看库存与流水', 'inventory.adjust': '登记期初和库存调整', 'warehouses.manage': '管理仓库档案',
 };
 export const actionLabels: Record<string, string> = {
-  'reports.preview': '预览亚马逊报表', 'reports.confirm': '确认亚马逊报表导入',
+  'sales.cost.update': '维护销售分析成本', 'reports.preview': '预览亚马逊报表', 'reports.confirm': '确认亚马逊报表导入',
   'auth.login': '登录', 'auth.logout': '退出', 'stores.export': '导出店铺', 'stores.create': '新增店铺',
   'stores.update': '更新店铺', 'users.create': '新增账号', 'users.update': '更新账号权限',
   'users.bootstrap': '初始化管理员', 'jobs.create': '提交任务', 'jobs.retry': '重试任务',
@@ -84,4 +84,4 @@ export const actionLabels: Record<string, string> = {
   'inventory.adjust': '调整库存', 'warehouses.create': '新增仓库', 'warehouses.update': '更新仓库档案',
   'jobs.succeeded': '任务完成', 'jobs.failed': '任务失败', 'files.upload': '上传附件', 'files.download': '下载附件',
 };
-export const resourceLabels: Record<string, string> = { report_import: '亚马逊报表导入', user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入', purchase_order: '采购单', shipment: '货件', inventory: '库存', warehouse: '仓库' };
+export const resourceLabels: Record<string, string> = { sales_cost: '销售分析成本', report_import: '亚马逊报表导入', user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入', purchase_order: '采购单', shipment: '货件', inventory: '库存', warehouse: '仓库' };

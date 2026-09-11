@@ -19,10 +19,11 @@ const PurchasesPage = lazy(() => import('./PurchasePages').then(module => ({ def
 const ShipmentsPage = lazy(() => import('./ShipmentPages').then(module => ({ default: module.ShipmentsPage })));
 const ReportImportsPage = lazy(() => import('./ReportImports').then(module => ({ default: module.ReportImportsPage })));
 const ReportRecordsPage = lazy(() => import('./ReportRecords').then(module => ({ default: module.ReportRecordsPage })));
+const SalesAnalysisPage = lazy(() => import('./SalesAnalysisPage').then(module => ({ default: module.SalesAnalysisPage })));
 const InventoryPage = lazy(() => import('./InventoryPages').then(module => ({ default: module.InventoryPage })));
 
 type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes' | 'purchases' | 'shipments' | 'inventory' | 'imports' | 'sales' | 'ads';
-const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价', purchases: '采购记录', shipments: '发货进度', inventory: '库存管理', imports: '数据导入中心', sales: '销售记录', ads: '广告数据' };
+const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价', purchases: '采购记录', shipments: '发货进度', inventory: '库存管理', imports: '数据导入中心', sales: '销售数据分析', ads: '广告数据' };
 const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view', products: 'products.view', suppliers: 'suppliers.view', quotes: 'quotes.view', purchases: 'purchases.view', shipments: 'shipments.view', inventory: 'inventory.view', imports: 'reports.view', sales: 'reports.view', ads: 'reports.view' };
 function initialPage(): Page { const hash = location.hash.slice(1).split('?')[0]; return hash in pageTitles ? hash as Page : 'workspace'; }
 
@@ -86,7 +87,7 @@ export default function App() {
       can('shipments.view') && { key: 'shipments', icon: <ContainerOutlined />, label: '发货进度' },
       can('inventory.view') && { key: 'inventory', icon: <ApartmentOutlined />, label: '库存管理' },
       can('reports.view') && { key: 'imports', icon: <ImportOutlined />, label: '数据导入中心' },
-      can('reports.view') && { key: 'sales', icon: <FileProtectOutlined />, label: '销售记录' },
+      can('reports.view') && { key: 'sales', icon: <FileProtectOutlined />, label: '销售数据分析' },
       can('reports.view') && { key: 'ads', icon: <DashboardOutlined />, label: '广告数据' },
       { key: 'finance-planned', icon: <FileProtectOutlined />, label: <span className="planned-nav">财务核算<span>筹建</span></span>, disabled: true },
     ].filter(Boolean) },
@@ -130,7 +131,7 @@ export default function App() {
           {page === 'purchases' && <PurchasesPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
           {page === 'shipments' && <ShipmentsPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
           {page === 'imports' && <ReportImportsPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
-          {page === 'sales' && <ReportRecordsPage key={'sales-' + selectedStore} kind="sales" user={user} selectedStore={selectedStore} onImport={() => navigate('imports')} />}
+          {page === 'sales' && <SalesAnalysisPage key={'sales-' + selectedStore} user={user} stores={stores} selectedStore={selectedStore} onImport={() => navigate('imports')} />}
           {page === 'ads' && <ReportRecordsPage key={'ads-' + selectedStore} kind="ads" user={user} selectedStore={selectedStore} onImport={() => navigate('imports')} />}
           {page === 'inventory' && <InventoryPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
         </Suspense>}

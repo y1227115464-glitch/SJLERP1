@@ -5,6 +5,7 @@ from app.core.database import Database
 from app.models import Base
 from app.supply import models as supply_models  # Register supply tables with Base.metadata.
 from app.reports import models as report_models  # Register report tables.
+from app.reports.costs import SalesCostRate
 
 from app.tasks import models as task_models
 from app.product_scope import ProductStore

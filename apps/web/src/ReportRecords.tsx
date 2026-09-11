@@ -21,7 +21,7 @@ const labels: Record<string, string> = { amazon_order_id: '亚马逊订单号', 
   attributed_sales: '7 天归因销售额', orders: '7 天归因订单数', units: '7 天归因销售量', advertised_units: '广告 SKU 销量', other_units: '其他 SKU 销量',
   advertised_sales: '广告 SKU 销售额', other_sales: '其他 SKU 销售额', attribution_days: '归因窗口（天）' };
 
-export function ReportRecordsPage({ kind, user, selectedStore, onImport }: { kind: ReportKind; user: User; selectedStore: string; onImport: () => void }) {
+export function ReportRecordsPage({ kind, user, selectedStore, onImport, embedded = false }: { kind: ReportKind; user: User; selectedStore: string; onImport: () => void; embedded?: boolean }) {
   const [search, setSearch] = useState<ReportSearchValue>({ q: '', sku: '' });
   const [dateRange, setDateRange] = useState<ReportDateRange>({ start: '', end: '' });
   const { start, end } = dateRange;
@@ -36,9 +36,9 @@ export function ReportRecordsPage({ kind, user, selectedStore, onImport }: { kin
   const summary = useResource<{ groups: SummaryGroup[] }>(queryPath(`${route}/summary`, filters));
   const refresh = () => { list.reload(); summary.reload(); };
   const isSales = kind === 'sales';
-  return <><PageHeading eyebrow={isSales ? 'AMAZON SALES RECORDS' : 'SPONSORED PRODUCTS'} title={isSales ? '销售记录' : '广告数据'}
+  return <>{!embedded && <PageHeading eyebrow={isSales ? 'AMAZON SALES RECORDS' : 'SPONSORED PRODUCTS'} title={isSales ? '销售数据分析' : '广告数据'}
     description={isSales ? '查看导入后的订单明细、数量和金额，重叠报告按业务键合并并保留来源。' : '按天查看商品推广数据与 7 天归因指标，同日同 SKU、活动和广告组保留最新导入记录。'}
-    extra={user.permissions.includes('reports.import') && <Button type="primary" icon={<ImportOutlined />} onClick={onImport}>前往导入</Button>} />
+    extra={user.permissions.includes('reports.import') && <Button type="primary" icon={<ImportOutlined />} onClick={onImport}>前往导入</Button>} />}
     <Alert type="info" showIcon title={isSales ? '订单金额口径' : '按天覆盖与统计口径'} description={isSales ? '净额 = 商品金额 + 运费 + 礼品包装费 − 商品优惠 − 运费优惠，不含税、不乘数量。待处理与取消订单分组展示，缺失金额保留为空；不代表结算收入或利润。' : '同店铺按日期、SKU、广告活动名称和广告组名称去重，新导入覆盖之前的数据。日报与历史区间分别汇总；比率重新计算，广告销售额不叠加到订单销售额。'} />
     <Card className="section-card"><div className="report-filters"><ReportSearch route={route} context={context} value={search} onSearch={setSearch} />
       <ReportDateFilter value={dateRange} onChange={setDateRange} />
