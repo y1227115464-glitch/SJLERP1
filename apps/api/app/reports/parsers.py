@@ -29,6 +29,26 @@ AD_MONEY = {'花费': 'spend', '7天总销售额': 'attributed_sales', '7天内�
 AD_TEXT = {'广告组合名称': 'portfolio', '货币': 'currency', '广告活动名称': 'campaign', '广告组名称': 'ad_group',
            '零售商': 'retailer', '国家/地区': 'country', '广告SKU': 'sku', '广告ASIN': 'asin'}
 AD_REQUIRED = [*AD_TEXT, *AD_COUNTS, *AD_MONEY]
+# Normalize Amazon's English export labels before validation and row parsing.
+# Keep attribution windows explicit: a 14-day metric is not a 7-day metric.
+AD_HEADER_ALIASES = {
+    'date': '日期', 'start date': '开始日期', 'end date': '结束日期',
+    'portfolio name': '广告组合名称', 'currency': '货币',
+    'campaign name': '广告活动名称', 'ad group name': '广告组名称',
+    'retailer': '零售商', 'country': '国家/地区',
+    'advertised sku': '广告SKU', 'advertised asin': '广告ASIN',
+    'impressions': '展示量', 'clicks': '点击量',
+    'click-thru rate (ctr)': '点击率 (CTR)', 'cost per click (cpc)': '单次点击成本 (CPC)',
+    'spend': '花费', '7 day total sales': '7天总销售额',
+    'total advertising cost of sales (acos)': '广告投入产出比 (ACOS) 总计',
+    'total return on advertising spend (roas)': '总广告投资回报率 (ROAS)',
+    '7 day total orders (#)': '7天总订单数(#)', '7 day total units (#)': '7天总销售量(#)',
+    '7 day conversion rate': '7天的转化率',
+    '7 day advertised sku units (#)': '7天内广告SKU销售量(#)',
+    '7 day other sku units (#)': '7天内其他SKU销售量(#)',
+    '7 day advertised sku sales': '7天内广告SKU销售额',
+    '7 day other sku sales': '7天内其他SKU销售额',
+}
 
 
 def fingerprint(value):
@@ -208,6 +228,8 @@ def parse_report(kind, content):
         if not isinstance(headers, list) or not headers:
             raise ValueError('文件为空或表头无效')
         headers = [str(value or '').strip() for value in headers]
+        if kind == 'ads':
+            headers = [AD_HEADER_ALIASES.get(header.casefold(), header) for header in headers]
         required = SALES_REQUIRED if kind == 'sales' else AD_REQUIRED
         if len(headers) > MAX_COLUMNS or len(headers) != len(set(headers)) or not set(required).issubset(headers):
             raise ValueError('表头不符合所选报告格式，缺少字段或包含重复列')

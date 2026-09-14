@@ -1,4 +1,4 @@
-from test_report_parsers import AD_HEADERS, ad, ads_file
+from test_report_parsers import AD_HEADERS, ad, ads_file, english_ad_file
 from test_reports import preview, confirm
 
 DAILY_HEADERS = ['日期', *AD_HEADERS[2:]]
@@ -47,6 +47,18 @@ def test_daily_import_overwrites_attributes_and_keeps_other_keys(system):
     assert confirm(c, again, h).json()['result']['skipped'] == 1
     other, _ = preview(system, daily_file([daily()]), 'ads', h, store=system['ids']['b'])
     assert confirm(c, other, h).json()['result']['created'] == 1
+
+
+def test_english_import_and_chinese_reimport_share_daily_identity(system):
+    c = system['client']
+    batch, h = preview(system, english_ad_file([daily()], daily=True), 'ads')
+    assert confirm(c, batch, h).json()['result']['created'] == 1
+    same, _ = preview(system, daily_file([daily()]), 'ads', h)
+    assert confirm(c, same, h).json()['result']['skipped'] == 1
+    changed, _ = preview(system, english_ad_file([daily(花费=8)], daily=True), 'ads', h)
+    assert confirm(c, changed, h).json()['result']['updated'] == 1
+    result = c.get('/api/v1/ad-records', headers=h).json()
+    assert result['total'] == 1 and result['items'][0]['spend'] == '8.0000'
 
 
 def test_daily_and_legacy_period_are_separate_and_old_preview_reuploads(system):

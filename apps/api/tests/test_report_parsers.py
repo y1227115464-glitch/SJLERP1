@@ -12,6 +12,20 @@ AD_HEADERS = ['开始日期', '结束日期', '广告组合名称', '货币', '�
               '广告SKU', '广告ASIN', '展示量', '点击量', '点击率 (CTR)', '单次点击成本 (CPC)', '花费', '7天总销售额',
               '广告投入产出比 (ACOS) 总计', '总广告投资回报率 (ROAS)', '7天总订单数(#)', '7天总销售量(#)',
               '7天的转化率', '7天内广告SKU销售量(#)', '7天内其他SKU销售量(#)', '7天内广告SKU销售额', '7天内其他SKU销售额']
+EN_AD_HEADERS = ['Start Date', 'End Date', 'Portfolio name', 'Currency', 'Campaign Name', 'Ad Group Name',
+                 'Retailer', 'Country', 'Advertised SKU', 'Advertised ASIN', 'Impressions', 'Clicks',
+                 'Click-Thru Rate (CTR)', 'Cost Per Click (CPC)', 'Spend', '7 Day Total Sales ',
+                 'Total Advertising Cost of Sales (ACOS) ', 'Total Return on Advertising Spend (ROAS)',
+                 '7 Day Total Orders (#)', '7 Day Total Units (#)', '7 Day Conversion Rate',
+                 '7 Day Advertised SKU Units (#)', '7 Day Other SKU Units (#)',
+                 '7 Day Advertised SKU Sales ', '7 Day Other SKU Sales ']
+
+
+def english_ad_file(rows, daily=False):
+    source = ['日期', *AD_HEADERS[2:]] if daily else AD_HEADERS
+    headers = ['Date', *EN_AD_HEADERS[2:]] if daily else EN_AD_HEADERS
+    translated = [{en: row.get(zh, '') for zh, en in zip(source, headers)} for row in rows]
+    return ads_file(translated, headers=headers)
 
 
 def sale(**changes):
@@ -101,6 +115,54 @@ def test_ad_parser_reads_beyond_bad_dimension_and_normalizes_money():
     assert result['rows'][0]['data']['spend'] == '3.0000'
     assert result['rows'][0]['data']['end_date'] == '2026-06-30'
     assert parse_report('ads', ads_file([ad()], formula=True))['errors']
+
+
+@pytest.mark.parametrize('daily', [False, True])
+def test_ad_english_and_chinese_exports_parse_identically(daily):
+    from app.reports.parsers import parse_report
+    headers = ['日期', *AD_HEADERS[2:]] if daily else AD_HEADERS
+    rows = [ad(日期='2026-06-01 00:00:00'), ad(日期='2026-06-01 00:00:00', 广告SKU='SKU-B')]
+    chinese = parse_report('ads', ads_file(rows, headers=headers))
+    english = parse_report('ads', english_ad_file(rows, daily=daily))
+    assert not english['errors'] and len(english['rows']) == 2
+    assert english == chinese
+
+
+def test_ad_mixed_reordered_headers_with_spaces_and_case():
+    from app.reports.parsers import parse_report
+    labels = [f' {en.upper()} ' if i % 2 else zh for i, (zh, en) in enumerate(zip(AD_HEADERS, EN_AD_HEADERS))]
+    row = ad()
+    translated = {label: row[zh] for zh, label in zip(AD_HEADERS, labels)}
+    assert parse_report('ads', ads_file([translated], headers=labels[::-1])) == parse_report('ads', ads_file([row]))
+
+
+@pytest.mark.parametrize('duplicate', ['Spend', ' spend ', '7 Day Total Sales ', 'Start Date', 'Click-Thru Rate (CTR)'])
+def test_ad_rejects_duplicate_fields_after_language_mapping(duplicate):
+    from fastapi import HTTPException
+    from app.reports.parsers import parse_report
+    with pytest.raises(HTTPException) as error:
+        parse_report('ads', ads_file([ad()], headers=[*AD_HEADERS, duplicate]))
+    assert error.value.status_code == 422
+    assert error.value.detail['code'] == 'invalid_report'
+
+
+def test_ad_english_missing_or_different_attribution_is_rejected():
+    from fastapi import HTTPException
+    from app.reports.parsers import parse_report
+    for replacement in [None, '14 Day Total Sales']:
+        headers = [replacement if header == '7 Day Total Sales ' else header for header in EN_AD_HEADERS]
+        headers = [header for header in headers if header is not None]
+        with pytest.raises(HTTPException) as error:
+            parse_report('ads', ads_file([], headers=headers))
+        assert error.value.status_code == 422
+
+
+def test_ad_english_daily_dates_still_require_consistency():
+    from app.reports.parsers import parse_report
+    row = {en: ad()[zh] for zh, en in zip(AD_HEADERS, EN_AD_HEADERS)} | {'Date': '2026-06-01'}
+    parsed = parse_report('ads', ads_file([row], headers=['Date', *EN_AD_HEADERS]))
+    assert len(parsed['errors']) == 1
+    assert '日期与开始/结束日期不一致' in parsed['errors'][0]['message']
 
 
 def test_parser_encoding_headers_bad_files_and_nonfinite_values():
