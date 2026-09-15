@@ -10,6 +10,7 @@ from sqlalchemy import Numeric, cast, func, select, union
 from app.core.api import DB, Page
 from app.models import Store
 from app.reports.costs import Reader, router, visible_rates
+from app.reports.fba import FBA_PRICE_THRESHOLD, applicable, visible_fba_rates
 from app.reports.models import AdRecord, SalesRecord
 from app.reports.routes import records_query
 from app.reports.sku import normalized_sku, sku_column
@@ -86,13 +87,17 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
                     return cost
         return None
 
+    fba_rates = defaultdict(list)
+    for fee in db.scalars(visible_fba_rates(user, store_id)):
+        fba_rates[fee.sku].append(fee)
+
     s = source_sales.subquery()
     day = func.date(func.timezone('UTC', s.c.purchase_date)) if db.bind.dialect.name == 'postgresql' else func.date(s.c.purchase_date)
     price = cast(s.c.data['item_price'].as_string(), Numeric(20, 4))
     discount = func.coalesce(cast(s.c.data['item_promotion_discount'].as_string(), Numeric(20, 4)), 0)
     groups = db.execute(select(s.c.store_id, s.c.sku, day, s.c.currency, func.sum(s.c.quantity), func.sum(price - discount),
-        func.count(), func.count(price)).group_by(s.c.store_id, s.c.sku, day, s.c.currency))
-    for store, seller_sku, source_day, currency, quantity, sales, count, amount_count in groups:
+        func.count(), func.count(price), price, s.c.quantity).group_by(s.c.store_id, s.c.sku, day, s.c.currency, price, s.c.quantity))
+    for store, seller_sku, source_day, currency, quantity, sales, count, amount_count, line_price, line_quantity in groups:
         sales = sales / divisors[currency] if sales is not None else None
         row = row_for(store, seller_sku)
         quantity = int(quantity)
@@ -100,6 +105,7 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         row['sales_rows'] += count
         source_day = date.fromisoformat(source_day) if isinstance(source_day, str) else source_day
         cost = cost_on(store, seller_sku, source_day)
+        fee = applicable(fba_rates[seller_sku], store, source_day)
         if count != amount_count:
             row['issues'].add('缺少销售金额')
             row['sales'] = row['commission'] = None
@@ -111,6 +117,13 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
             if cost:
                 unit = cost.fba_fee if field == 'fba_fee' else (
                     cost.product_cost + cost.inbound_fee if cost.product_cost is not None and cost.inbound_fee is not None else None)
+            if field == 'fba_fee' and fee:
+                # Compare unrounded, pre-discount unit price in USD. Group by source
+                # line price/quantity so same-day mixed price tiers never get averaged.
+                unit = (fee.low_price_fee if line_price <= FBA_PRICE_THRESHOLD * line_quantity * divisors[currency]
+                    else fee.high_price_fee) if line_price is not None and line_quantity > 0 else None
+                if quantity and line_price is None:
+                    row['issues'].add('缺少商品金额，无法判断物流费档位')
             if quantity and unit is None:
                 row[field] = None
                 if field == 'fba_fee':
@@ -124,6 +137,8 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
                 row[field] += quantity * (unit or ZERO)
         if cost:
             row['_sources'].add(cost.id)
+        if fee and quantity:
+            row['_sources'].add(fee.id)
 
     a = source_ads.subquery()
     for store, seller_sku, currency, spend, count in db.execute(select(a.c.store_id, a.c.sku, a.c.currency, func.sum(a.c.spend),

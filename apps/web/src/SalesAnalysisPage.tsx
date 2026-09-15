@@ -39,7 +39,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
   const [sort, setSort] = useState('sales');
   const [cad, setCad] = useState(1.36);
   const [mxn, setMxn] = useState(17.66);
-  const [costs, setCosts] = useState<{ sku?: string } | null>(null);
+  const [costs, setCosts] = useState<{ sku?: string; tab?: 'costs' | 'fba' } | null>(null);
   const context = { store_id: selectedStore === 'all' ? undefined : selectedStore, start_date: dates.start, end_date: dates.end, order_scope: orderScope };
   const path = queryPath('/sales-analysis', { ...context, ...search, cad_per_usd: String(cad), mxn_per_usd: String(mxn), sort_by: sort, descending: sort === 'sku' ? 'false' : 'true' });
   const [cursor, setCursor] = useState({ path, page: 1 });
@@ -54,7 +54,8 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       <div className="table-subtext">{row.store_name}</div>{row.issues.length > 0 && <Tooltip title={row.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}</> },
     { title: '销量', dataIndex: 'quantity', width: 80, align: 'right' },
     { title: <span>产品成本、头程<br />及入库配置费 USD</span>, dataIndex: 'product_cost', width: 165, align: 'right', render: costCell },
-    { title: <span>FBA 派送费<br />USD</span>, dataIndex: 'fba_fee', width: 130, align: 'right', render: costCell },
+    { title: <span>FBA 派送费<br />USD</span>, dataIndex: 'fba_fee', width: 130, align: 'right', render: (value, row) => value == null
+      ? <Button type="link" size="small" onClick={() => setCosts({ sku: row.sku, tab: 'fba' })}>待补充</Button> : money(value) },
     { title: <span>亚马逊佣金<br />USD</span>, dataIndex: 'commission', width: 130, align: 'right', render: money },
     { title: <span>销售利润<br />USD</span>, dataIndex: 'sales_profit', width: 130, align: 'right', render: value => colored(value) },
     { title: <span>亚马逊销售额<br />USD</span>, dataIndex: 'sales', width: 145, align: 'right', render: money },
@@ -102,6 +103,6 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
         </Table.Summary.Row></Table.Summary>} />
       <p className="table-subtext">合计包含全部筛选结果，不只当前页；利润率按合计利润 ÷ 合计销售额重算。销售额为 0 时利润率显示 0.00%。同名 SKU 在不同店铺分别核算。</p>
     </Card>
-    {costs && <SalesCosts user={user} stores={stores} selectedStore={selectedStore} sku={costs.sku} onClose={() => setCosts(null)} onChanged={resource.reload} />}
+    {costs && <SalesCosts user={user} stores={stores} selectedStore={selectedStore} sku={costs.sku} initialTab={costs.tab} onClose={() => setCosts(null)} onChanged={resource.reload} />}
   </>;
 }
