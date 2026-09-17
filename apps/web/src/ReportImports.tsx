@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ReportProducts } from './ReportProducts';
 import { Alert, App, Button, Card, Descriptions, Drawer, Form, Input, Modal, Select, Space, Statistic, Table, Tag } from 'antd';
 import { CloudUploadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api, errorText } from './api';
@@ -17,10 +18,10 @@ export function ReportImportsPage({ user, stores, selectedStore }: { user: User;
   const [detail, setDetail] = useState<string | null>(null);
   const list = usePagedList<ReportBatch>(queryPath('/report-imports', { kind, store_id: selectedStore === 'all' ? undefined : selectedStore }));
   return <><PageHeading eyebrow="AMAZON REPORT IMPORT" title="数据导入中心" description="按店铺上传亚马逊原始销售与广告报告，先核对预览，再确认写入。" />
-    {user.permissions.includes('reports.import') && <div className="report-import-options">{(['sales', 'ads'] as ReportKind[]).map(item => <Card key={item} title={item === 'sales' ? '销售订单报告' : '商品推广报告'}>
-      <p>{item === 'sales' ? 'TXT / TSV 制表符格式。按订单与 SKU 去重，较新的订单状态覆盖旧版本。' : 'XLSX 格式，7 天归因指标。同一天的 SKU、广告活动和广告组相同，新导入覆盖旧记录。'}</p>
+    {user.permissions.includes('reports.import') && <div className="report-import-options">{(['sales', 'ads'] as ReportKind[]).map(item => <Card key={item} title={item === 'sales' ? '销售订单报告' : '商品推广 / 品牌推广报告'}>
+      <p>{item === 'sales' ? 'TXT / TSV 制表符格式。按订单与 SKU 去重，较新的订单状态覆盖旧版本。' : 'XLSX 格式，自动识别中英文表头。商品推广保留 7 天归因，品牌推广活动报告保留 14 天归因。'}</p>
       <Button type="primary" icon={<CloudUploadOutlined />} onClick={() => setUpload(item)}>导入{reportNames[item]}</Button></Card>)}</div>}
-    <Alert type="info" showIcon title="重复导入不会重复累计" description="销售按店铺、销售站点、订单号和 SKU 识别重复；旧版本跳过，同更新时间内容冲突时暂停导入。广告在同店铺按日期、SKU、广告活动名称和广告组名称去重，新记录覆盖旧记录。" />
+    <Alert type="info" showIcon title="重复导入不会重复累计" description="销售按店铺、销售站点、订单号和 SKU 识别重复；旧版本跳过，同更新时间内容冲突时暂停导入。商品推广按店铺、日期、SKU、活动和广告组去重；品牌推广按店铺、日期和活动名称去重。新广告记录覆盖旧指标。" />
     <ErrorNotice error={list.error} retry={list.reload} /><Card className="section-card" title="导入批次" extra={<Space><Select aria-label="筛选报告类型" placeholder="全部报告" allowClear value={kind} onChange={setKind} options={Object.entries(reportNames).map(([value, label]) => ({ value, label }))} style={{ width: 140 }} /><Button icon={<ReloadOutlined />} onClick={list.reload}>刷新</Button></Space>}>
       <Table rowKey="id" loading={list.loading} dataSource={list.data?.items ?? []} pagination={list.pagination} scroll={{ x: 950 }} columns={[
         { title: '文件 / 店铺', render: (_, row) => <><Button type="link" onClick={() => setDetail(row.id)}>{row.filename}</Button><div className="table-subtext">{row.store_name}</div></> },
@@ -50,7 +51,7 @@ function ReportUpload({ kind, stores, selectedStore, onClose, onSaved }: { kind:
       <Form.Item name="store_id" label="数据所属店铺" rules={[{ required: true, message: '请选择实际所属店铺' }]}><Select disabled={busy} placeholder="请选择实际所属店铺" options={stores.filter(store => store.is_active).map(store => ({ value: store.id, label: store.name }))} /></Form.Item>
       <Form.Item label={kind === 'sales' ? '销售 TXT / TSV 文件' : '广告 XLSX 文件'} required><Input type="file" aria-label="选择导入文件" accept={kind === 'sales' ? '.txt,.tsv' : '.xlsx'} disabled={busy} onChange={event => setFile(event.target.files?.[0] ?? null)} /></Form.Item>
       <p className="table-subtext">最多 20 MB、10000 行。下一步显示新增、更新、跳过与错误明细，尚不写入业务记录。</p>
-      {kind === 'ads' && <p className="table-subtext">日报支持「日期」列或相同的起止日期。同日同 SKU、活动和广告组在文件内重复时保留最后一行；旧版多日汇总在「历史区间」查看。</p>}
+      {kind === 'ads' && <p className="table-subtext">支持中英文商品推广及品牌推广活动报表。品牌推广导入后，请到「广告数据 → 品牌广告分摊」按活动维护商品和比例。日报支持日期列或相同的起止日期；多日汇总在「历史区间」查看。</p>}
       <Space><Button onClick={onClose} disabled={busy}>取消</Button><Button type="primary" htmlType="submit" loading={busy}>{busy ? '正在读取和校验' : '上传并预览'}</Button></Space>
     </Form></Modal>;
 }
@@ -81,11 +82,13 @@ export function ReportBatchDrawer({ id, user, onClose, onChanged }: { id: string
         <Space className="report-actions"><Button onClick={refresh} icon={<ReloadOutlined />}>刷新预览</Button>{batch.can_confirm && user.permissions.includes('reports.import') && <Button type="primary" onClick={confirm} loading={busy} disabled={!!batch.error_count || !!batch.counts?.conflict}>确认导入</Button>}</Space>
       </>}
       {!batch.result && <Select aria-label="筛选预览结果" placeholder="全部预览结果" value={action} onChange={setAction} allowClear style={{ width: 180, marginBottom: 16 }} options={['create', 'update', 'skip', 'conflict', 'error'].map(value => ({ value, label: actionLabels[value] }))} />}
-      <ErrorNotice error={rows.error} retry={rows.reload} /><Table rowKey="row" dataSource={rows.data?.items ?? []} loading={rows.loading} pagination={rows.pagination} scroll={{ x: 900 }} columns={[
+      {batch.kind === 'ads' && <p className="table-subtext">品牌推广的 SKU / ASIN 按当前活动分摊配置显示，比例修改后刷新即可更新。未配置活动会明确提示；未找到 ASIN 时仍保留已配置 SKU。</p>}
+      <ErrorNotice error={rows.error} retry={rows.reload} /><Table rowKey="row" dataSource={rows.data?.items ?? []} loading={rows.loading} pagination={rows.pagination} scroll={{ x: 1400 }} columns={[
         { title: '源行', dataIndex: 'row', width: 70 }, { title: '处理', dataIndex: 'action', width: 85, render: value => <Tag color={actionColors[value]}>{actionLabels[value]}</Tag> },
         { title: '订单 / 广告活动', render: (_, row) => row.data?.amazon_order_id || row.data?.campaign || '—' },
+        ...(batch.kind === 'ads' ? [{ title: '广告类型 / 归因', render: (_: unknown, row: PreviewRow) => row.data ? `${row.data.ad_type === 'sponsored_brands' ? '品牌推广' : '商品推广'} · ${row.data.attribution_days} 天` : '—' }] : []),
         ...(batch.kind === 'ads' ? [{ title: '日期 / 广告组', render: (_: unknown, row: PreviewRow) => <>{row.data?.report_date || (row.data ? `${row.data.start_date} — ${row.data.end_date}` : '—')}<div className="table-subtext">{row.data?.ad_group}</div></> }] : []),
-        { title: 'SKU / ASIN', render: (_, row) => <>{row.data?.sku || '—'}<div className="table-subtext">{row.data?.asin}</div></> },
+        { title: 'SKU / ASIN', width: 220, render: (_, row) => <ReportProducts data={row.data} /> },
         { title: '数量 / 点击', render: (_, row) => row.data?.quantity ?? row.data?.clicks ?? '—' },
         { title: '订单净额 / 广告花费', render: (_, row) => row.data ? reportMoney(row.data.net_amount ?? row.data.spend, row.data.currency) : '—' },
         { title: '说明', dataIndex: 'message', width: 240 },

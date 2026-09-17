@@ -7,7 +7,8 @@ export type SalesAnalysisRow = {
 };
 export type AnalysisTotals = Omit<SalesAnalysisRow, 'key' | 'store_id' | 'store_name' | 'issues' | 'source_skus' | 'sales_rows' | 'ad_rows' | 'cost_versions'> & { incomplete_rows: number };
 export type SalesAnalysis = { items: SalesAnalysisRow[]; total: number; totals: AnalysisTotals;
-  excluded: { unsupported_sales_rows: number; unsupported_ad_rows: number }; currency: string };
+  excluded: { unsupported_sales_rows: number; unsupported_ad_rows: number;
+    unallocated_brand_campaigns: { store_id: string; campaign: string; currency: string; spend: string }[] }; currency: string };
 export type SalesCostRate = { id: string; store_id: string | null; sku: string; effective_from: string;
   product_cost: string | null; inbound_fee: string | null; fba_fee: string | null;
   commission_rate: string; source: string; revision: number };

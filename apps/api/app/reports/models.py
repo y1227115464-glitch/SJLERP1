@@ -77,6 +77,7 @@ class AdRecord(Base):
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date] = mapped_column(Date)
     campaign: Mapped[str] = mapped_column(String(500))
+    ad_type: Mapped[str] = mapped_column(String(30), default='sponsored_products', server_default='sponsored_products')
     ad_group: Mapped[str] = mapped_column(String(500))
     sku: Mapped[str] = mapped_column(String(120))
     asin: Mapped[str] = mapped_column(String(120))
@@ -90,3 +91,13 @@ class AdRecord(Base):
     units: Mapped[int] = mapped_column(BigInteger)
     data: Mapped[dict] = mapped_column(JSON)
     store: Mapped[Store] = relationship(lazy='joined')
+
+
+class BrandAdAllocation(Base):
+    __tablename__ = 'brand_ad_allocations'
+    __table_args__ = (UniqueConstraint('store_id', 'campaign', name='uq_brand_allocation_store_campaign'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    store_id: Mapped[str] = mapped_column(ForeignKey('stores.id'), index=True)
+    campaign: Mapped[str] = mapped_column(String(500))
+    allocations: Mapped[list] = mapped_column(JSON)
+    revision: Mapped[int] = mapped_column(BigInteger, default=1)

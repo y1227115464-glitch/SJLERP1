@@ -11,8 +11,8 @@ from app.core.api import DB, Page
 from app.models import Store
 from app.reports.costs import Reader, router, visible_rates
 from app.reports.fba import FBA_PRICE_THRESHOLD, applicable, visible_fba_rates
-from app.reports.models import AdRecord, SalesRecord
-from app.reports.routes import records_query
+from app.reports.models import AdRecord, BrandAdAllocation, SalesRecord
+from app.reports.routes import records_query, scope
 from app.reports.sku import normalized_sku, sku_column
 
 ZERO = Decimal(0)
@@ -55,7 +55,7 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
     excluded_ads = db.scalar(select(func.count()).select_from(ad_query.where(~AdRecord.currency.in_(CURRENCIES)).subquery()))
     ad_stores = set(db.scalars(ad_query.where(AdRecord.currency.in_(CURRENCIES)).with_only_columns(AdRecord.store_id).distinct()))
     source_sales = sales_query.where(SalesRecord.currency.in_(CURRENCIES))
-    source_ads = ad_query.where(AdRecord.currency.in_(CURRENCIES))
+    source_ads = ad_query.where(AdRecord.currency.in_(CURRENCIES), AdRecord.ad_type == 'sponsored_products')
     for model, query in [(SalesRecord, source_sales), (AdRecord, source_ads)]:
         if q:
             query = query.where(sku_column(model.sku).icontains(normalized_sku(q), autoescape=True))
@@ -146,6 +146,31 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         row = row_for(store, seller_sku)
         row['ad_spend'] += spend / divisors[currency]
         row['ad_rows'] += count
+    mappings = {(item.store_id, item.campaign): item.allocations for item in db.scalars(
+        scope(select(BrandAdAllocation), BrandAdAllocation, user, store_id))}
+    brand = ad_query.where(AdRecord.currency.in_(CURRENCIES), AdRecord.ad_type == 'sponsored_brands').subquery()
+    pending = []
+    for store, campaign, currency, spend, count in db.execute(select(brand.c.store_id, brand.c.campaign,
+            brand.c.currency, func.sum(brand.c.spend), func.count()).group_by(brand.c.store_id, brand.c.campaign, brand.c.currency)):
+        allocations = mappings.get((store, campaign))
+        if not allocations:
+            pending.append({'store_id': store, 'campaign': campaign, 'currency': currency, 'spend': format(spend, '.4f')})
+            continue
+        # Allocate whole cents with the largest remainder method before filtering SKUs.
+        # This keeps allocations equal to campaign spend and filtered results stable.
+        cents = int(money(spend / divisors[currency]) * 100)
+        parts = [(item['sku'], Decimal(cents) * Decimal(item['percentage']) / 100) for item in allocations]
+        amounts = {seller_sku: int(value) for seller_sku, value in parts}
+        remainder = cents - sum(amounts.values())
+        for seller_sku, _ in sorted(parts, key=lambda part: (-(part[1] % 1), part[0]))[:remainder]:
+            amounts[seller_sku] += 1
+        for seller_sku, allocated in amounts.items():
+            if (q and normalized_sku(q) not in seller_sku) or (sku and normalized_sku(sku) != seller_sku):
+                continue
+            row = row_for(store, seller_sku)
+            row['ad_spend'] += Decimal(allocated) / 100
+            row['ad_rows'] += count
+    pending_stores = {item['store_id'] for item in pending}
     names = dict(db.execute(select(Store.id, Store.name)).all())
     for row in rows.values():
         row['store_name'] = names[row['store_id']]
@@ -153,6 +178,9 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         if row['store_id'] not in ad_stores:
             row['ad_spend'] = None
             row['issues'].add('所选期间未导入广告日报')
+        if row['store_id'] in pending_stores:
+            row['ad_spend'] = None
+            row['issues'].add('该店铺存在未配置商品分摊的品牌广告，请到广告数据维护')
         for field in ['product_cost', 'fba_fee', 'commission', 'sales', 'ad_spend']:
             row[field] = money(row[field])
         row['sales_profit'] = (row['sales'] - row['product_cost'] - row['fba_fee'] - row['commission']
@@ -169,7 +197,10 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
     total['sales_profit_rate'] = rate(total['sales_profit'], total['sales'])
     total['actual_profit_rate'] = rate(total['actual_profit'], total['sales'])
     total['incomplete_rows'] = sum(bool(row['issues']) for row in values)
-    return values, output(total), {'unsupported_sales_rows': excluded_sales, 'unsupported_ad_rows': excluded_ads}
+    if pending:
+        total['ad_spend'] = total['actual_profit'] = total['actual_profit_rate'] = None
+    return values, output(total), {'unsupported_sales_rows': excluded_sales, 'unsupported_ad_rows': excluded_ads,
+        'unallocated_brand_campaigns': pending}
 
 
 @router.get('/suggestions')
@@ -179,8 +210,14 @@ def suggestions(db: DB, user: Reader, store_id: str | None = None, start_date: d
     sales, ads = queries(user, store_id, start_date, end_date, order_scope)
     source = union(sales.with_only_columns(sku_column(SalesRecord.sku).label('sku')).where(SalesRecord.currency.in_(CURRENCIES)),
         ads.with_only_columns(sku_column(AdRecord.sku).label('sku')).where(AdRecord.currency.in_(CURRENCIES))).subquery()
-    query = select(source.c.sku).where(source.c.sku.icontains(normalized_sku(q.strip()), autoescape=True)).order_by(source.c.sku)
-    values = db.scalars(query.limit(limit + 1)).all()
+    query = select(source.c.sku).where(source.c.sku != '', source.c.sku.icontains(normalized_sku(q.strip()), autoescape=True)).order_by(source.c.sku)
+    values = set(db.scalars(query.limit(limit + 1)).all())
+    campaigns = ads.where(AdRecord.ad_type == 'sponsored_brands', AdRecord.currency.in_(CURRENCIES)).with_only_columns(
+        AdRecord.store_id, AdRecord.campaign).distinct().subquery()
+    mappings = db.scalars(select(BrandAdAllocation).join(campaigns,
+        (campaigns.c.store_id == BrandAdAllocation.store_id) & (campaigns.c.campaign == BrandAdAllocation.campaign)))
+    values.update(item['sku'] for mapping in mappings for item in mapping.allocations if normalized_sku(q.strip()) in item['sku'])
+    values = sorted(values)
     return {'items': values[:limit], 'has_more': len(values) > limit}
 
 

@@ -60,7 +60,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
     { title: <span>销售利润<br />USD</span>, dataIndex: 'sales_profit', width: 130, align: 'right', render: value => colored(value) },
     { title: <span>亚马逊销售额<br />USD</span>, dataIndex: 'sales', width: 145, align: 'right', render: money },
     { title: <span>销售利润比<br />未扣除推广费用</span>, dataIndex: 'sales_profit_rate', width: 145, align: 'right', render: value => colored(value, percent) },
-    { title: <span>实际广告费<br />USD</span>, dataIndex: 'ad_spend', width: 135, align: 'right', render: value => value == null ? <Tooltip title="所选期间未导入该店铺的广告日报">待导入</Tooltip> : money(value) },
+    { title: <span>实际广告费<br />USD</span>, dataIndex: 'ad_spend', width: 135, align: 'right', render: value => value == null ? <Tooltip title="请检查广告日报及品牌广告商品分摊">待确认</Tooltip> : money(value) },
     { title: <span>扣除推广实际利润<br />USD</span>, dataIndex: 'actual_profit', width: 155, align: 'right', render: value => colored(value) },
     { title: '实际利润率', dataIndex: 'actual_profit_rate', width: 120, align: 'right', render: value => colored(value, percent) },
   ];
@@ -78,7 +78,8 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
     </div><p className="table-subtext">订单按 UTC 下单日期，广告按日报日期筛选。CMBQ 尺寸别名沿用周利润规则归并，其他 SKU 精确关联。</p></Card>
     <Alert showIcon type="info" title="利润分析口径" description="销售额 = 商品金额 − 商品优惠；成本与 FBA 费用按销量计算，佣金默认按销售额的 15% 预估。实际广告费取已导入日报，不叠加广告归因销售额。此处利润仍基于预估费用，不是结算净利润；请确认所选期间的销售与广告报告已完整导入。" />
     <ErrorNotice error={resource.error} retry={resource.reload} />
-    {!!totals?.incomplete_rows && <Alert className="analysis-alert" showIcon type="warning" title={`${totals.incomplete_rows} 个店铺 SKU 的资料待补充`} description="缺失费用或广告来源的利润留空；合计中受影响的金额也留空，避免高估利润。可在费用设置中补齐。" />}
+    {!!totals?.incomplete_rows && <Alert className="analysis-alert" showIcon type="warning" title={`${totals.incomplete_rows} 个店铺 SKU 的资料待补充`} description="缺失费用、广告来源或品牌广告分摊的利润留空。请在费用设置或广告数据中补齐。" />}
+    {!!data?.excluded.unallocated_brand_campaigns?.length && <Alert className="analysis-alert" showIcon type="warning" title="品牌广告尚未分摊，实际广告费与利润待确认" description={<><p>请到「广告数据 → 品牌广告分摊」维护商品与比例。以下花费属于所选期间，尚未归属到 SKU：</p>{data.excluded.unallocated_brand_campaigns.map(item => <div key={`${item.store_id}:${item.campaign}:${item.currency}`}>{stores.find(store => store.id === item.store_id)?.name || item.store_id} · {item.campaign} · {item.currency} {item.spend}</div>)}</>} />}
     {!!data && (data.excluded.unsupported_sales_rows > 0 || data.excluded.unsupported_ad_rows > 0) && <Alert className="analysis-alert" showIcon type="warning" title="部分币种尚未参与折算" description={`所选店铺和期间内有 ${data.excluded.unsupported_sales_rows} 条缺少币种或不支持币种的订单、${data.excluded.unsupported_ad_rows} 条不支持币种的广告未计入；当前支持 USD、CAD、MXN。`} />}
     <Row gutter={[16, 16]} className="analysis-metrics">
       <Col xs={24} sm={12} xl={6}><Card><Statistic title="销量" value={totals?.quantity ?? '—'} suffix="件" /></Card></Col>

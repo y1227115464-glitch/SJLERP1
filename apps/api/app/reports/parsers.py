@@ -29,6 +29,9 @@ AD_MONEY = {'花费': 'spend', '7天总销售额': 'attributed_sales', '7天内�
 AD_TEXT = {'广告组合名称': 'portfolio', '货币': 'currency', '广告活动名称': 'campaign', '广告组名称': 'ad_group',
            '零售商': 'retailer', '国家/地区': 'country', '广告SKU': 'sku', '广告ASIN': 'asin'}
 AD_REQUIRED = [*AD_TEXT, *AD_COUNTS, *AD_MONEY]
+BRAND_COUNTS = {'展示量': 'impressions', '点击量': 'clicks', '14天总订单数(#)': 'orders', '14天总销售量(#)': 'units'}
+BRAND_MONEY = {'花费': 'spend', '14天总销售额': 'attributed_sales'}
+BRAND_REQUIRED = ['广告活动名称', '货币', '国家/地区', '费用类型', *BRAND_COUNTS, *BRAND_MONEY]
 # Normalize Amazon's English export labels before validation and row parsing.
 # Keep attribution windows explicit: a 14-day metric is not a 7-day metric.
 AD_HEADER_ALIASES = {
@@ -48,6 +51,8 @@ AD_HEADER_ALIASES = {
     '7 day other sku units (#)': '7天内其他SKU销售量(#)',
     '7 day advertised sku sales': '7天内广告SKU销售额',
     '7 day other sku sales': '7天内其他SKU销售额',
+    'cost type': '费用类型', '14 day total sales': '14天总销售额',
+    '14 day total orders (#)': '14天总订单数(#)', '14 day total units (#)': '14天总销售量(#)',
 }
 
 
@@ -146,6 +151,9 @@ def sales_row(raw):
 
 
 def ad_keys(data):
+    if data.get('ad_type') == 'sponsored_brands':
+        identity = fingerprint(['sponsored_brands', 'daily' if data.get('report_date') else 'period', data['campaign']])
+        return fingerprint([identity, data['start_date'], data['end_date']]), identity
     if data.get('report_date'):
         identity = fingerprint(['daily', data['sku'], data['campaign'], data['ad_group']])
         return fingerprint([identity, data['report_date']]), identity
@@ -153,9 +161,11 @@ def ad_keys(data):
     return fingerprint([identity, data['start_date'], data['end_date']]), identity
 
 
-def ad_row(raw):
+def ad_row(raw, brand=False):
     data = {field: clean(raw.get(label), label, 500 if field in {'portfolio', 'campaign', 'ad_group'} else 120,
-                        required=field != 'portfolio') for label, field in AD_TEXT.items()}
+                        required=field in {'currency', 'campaign', 'country'} if brand else field != 'portfolio') for label, field in AD_TEXT.items()}
+    if brand:
+        data.update(ad_type='sponsored_brands', cost_type=clean(raw.get('费用类型'), '费用类型', 120))
     data['currency'] = data['currency'].upper()
     if not re.fullmatch('[A-Z]{3}', data['currency']):
         raise ValueError('货币须为三位币种代码')
@@ -170,9 +180,9 @@ def ad_row(raw):
         raise ValueError('开始日期不能晚于结束日期')
     if data['start_date'] == data['end_date']:
         data['report_date'] = data['start_date']
-    data.update({field: integer(raw.get(label), label) for label, field in AD_COUNTS.items()})
-    data.update({field: amount(raw.get(label), label) for label, field in AD_MONEY.items()})
-    data['attribution_days'] = 7
+    data.update({field: integer(raw.get(label), label) for label, field in (BRAND_COUNTS if brand else AD_COUNTS).items()})
+    data.update({field: amount(raw.get(label), label) for label, field in (BRAND_MONEY if brand else AD_MONEY).items()})
+    data['attribution_days'] = 14 if brand else 7
     key, identity = ad_keys(data)
     return key, identity, data
 
@@ -230,7 +240,8 @@ def parse_report(kind, content):
         headers = [str(value or '').strip() for value in headers]
         if kind == 'ads':
             headers = [AD_HEADER_ALIASES.get(header.casefold(), header) for header in headers]
-        required = SALES_REQUIRED if kind == 'sales' else AD_REQUIRED
+        brand = kind == 'ads' and '费用类型' in headers and '广告SKU' not in headers and '14天总销售额' in headers
+        required = SALES_REQUIRED if kind == 'sales' else BRAND_REQUIRED if brand else AD_REQUIRED
         if len(headers) > MAX_COLUMNS or len(headers) != len(set(headers)) or not set(required).issubset(headers):
             raise ValueError('表头不符合所选报告格式，缺少字段或包含重复列')
         if kind == 'ads' and '日期' not in headers and not {'开始日期', '结束日期'} <= set(headers):
@@ -249,7 +260,7 @@ def parse_report(kind, content):
                 if len(values) != len(headers):
                     raise ValueError('列数与表头不一致')
                 raw = dict(zip(headers, values))
-                key, identity, data = (sales_row if kind == 'sales' else ad_row)(raw)
+                key, identity, data = sales_row(raw) if kind == 'sales' else ad_row(raw, brand)
                 if kind == 'sales':
                     group = sales_legacy_key(data)
                     has_item_id = bool(data.get('order_item_id'))

@@ -17,6 +17,7 @@ from app.supply.inventory import router as inventory_router
 from app.supply.purchases import router as purchase_router
 from app.supply.shipments import router as shipment_router
 from app.reports.routes import router as reports_router
+from app.reports import brand_ads  # Register campaign allocation endpoints.
 from app.reports.analysis import router as analysis_router
 from app.tasks.routes import router as tasks_router
 from app.tasks.rules import router as task_rules_router

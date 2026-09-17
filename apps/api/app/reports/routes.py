@@ -9,6 +9,7 @@ from sqlalchemy.orm import defer
 
 from app.core.api import DB, Page, fail, paginated, require, store_filter
 from app.reports.comparison import compare
+from app.reports.ad_products import with_ad_products
 from app.reports.models import AdRecord, ReportImport, SalesRecord
 from app.reports.service import batch_out, confirm_import, create_preview, get_batch
 
@@ -61,7 +62,12 @@ def batch_rows(identifier: str, db: DB, user: Reader, page: Page, request: Reque
     rows.sort(key=lambda row: row['row'])
     if action:
         rows = [row for row in rows if row['action'] == action]
-    return {'items': rows[page.offset:page.offset + page.limit], 'total': len(rows)}
+    page_rows = rows[page.offset:page.offset + page.limit]
+    if batch.kind == 'ads':
+        data = with_ad_products(db, [{**row['data'], 'store_id': batch.store_id} for row in page_rows if row['data']])
+        resolved = iter(data)
+        page_rows = [{**row, 'data': next(resolved) if row['data'] else None} for row in page_rows]
+    return {'items': page_rows, 'total': len(rows)}
 
 
 @router.post('/report-imports/{identifier}/confirm')
@@ -97,7 +103,7 @@ def records_query(model, user, store_id, start_date, end_date, q, sku=''):
 
 
 def sku_options(db, query, column, term, limit):
-    query = query.with_only_columns(column).distinct().order_by(column)
+    query = query.with_only_columns(column).where(column != '').distinct().order_by(column)
     if term.strip():
         query = query.where(column.icontains(term.strip(), autoescape=True))
     values = db.scalars(query.limit(limit + 1)).all()
@@ -117,8 +123,11 @@ def sales_suggestions(db: DB, user: Reader, store_id: str | None = None, start_d
 @router.get('/ad-records/suggestions')
 def ad_suggestions(db: DB, user: Reader, store_id: str | None = None, start_date: date | None = None,
                    end_date: date | None = None, granularity: Literal['daily', 'period'] = 'daily',
+                   ad_type: Literal['sponsored_products', 'sponsored_brands'] | None = None,
                    q: str = Query('', max_length=200), limit: int = Query(50, ge=1, le=100)):
     query = records_query(AdRecord, user, store_id, start_date, end_date, '')
+    if ad_type:
+        query = query.where(AdRecord.ad_type == ad_type)
     query = query.where(AdRecord.report_date.is_not(None) if granularity == 'daily' else AdRecord.report_date.is_(None))
     return sku_options(db, query, AdRecord.sku, q, limit)
 
@@ -128,6 +137,7 @@ def record_out(record):
             'import_id': record.import_id, 'source_row': record.source_row, **record.data}
     if isinstance(record, AdRecord):
         result['report_date'] = record.report_date.isoformat() if record.report_date else None
+        result['ad_type'] = record.ad_type
     return result
 
 
@@ -143,10 +153,15 @@ def sales(db: DB, user: Reader, page: Page, store_id: str | None = None, start_d
 @router.get('/ad-records')
 def ads(db: DB, user: Reader, page: Page, store_id: str | None = None, start_date: date | None = None,
         end_date: date | None = None, q: str = '', granularity: Literal['daily', 'period'] = 'daily',
+        ad_type: Literal['sponsored_products', 'sponsored_brands'] | None = None,
         sku: str = Query('', max_length=120)):
     query = records_query(AdRecord, user, store_id, start_date, end_date, q, sku)
+    if ad_type:
+        query = query.where(AdRecord.ad_type == ad_type)
     query = query.where(AdRecord.report_date.is_not(None) if granularity == 'daily' else AdRecord.report_date.is_(None))
-    return paginated(db, query.order_by(AdRecord.start_date.desc(), AdRecord.id), page, record_out)
+    result = paginated(db, query.order_by(AdRecord.start_date.desc(), AdRecord.id), page, record_out)
+    result['items'] = with_ad_products(db, result['items'])
+    return result
 
 
 @router.get('/sales-records/summary')
@@ -171,14 +186,18 @@ def ratio(numerator, denominator):
 @router.get('/ad-records/summary')
 def ad_summary(db: DB, user: Reader, store_id: str | None = None, start_date: date | None = None,
                end_date: date | None = None, q: str = '', granularity: Literal['daily', 'period'] = 'daily',
+               ad_type: Literal['sponsored_products', 'sponsored_brands'] | None = None,
                sku: str = Query('', max_length=120)):
     query = records_query(AdRecord, user, store_id, start_date, end_date, q, sku)
+    if ad_type:
+        query = query.where(AdRecord.ad_type == ad_type)
     source = query.where(AdRecord.report_date.is_not(None) if granularity == 'daily' else AdRecord.report_date.is_(None)).subquery()
     fields = ['impressions', 'clicks', 'spend', 'attributed_sales', 'orders', 'units']
-    result = db.execute(select(source.c.currency, func.count(), *(func.sum(source.c[field]) for field in fields)).group_by(source.c.currency))
+    result = db.execute(select(source.c.currency, source.c.ad_type, func.count(), *(func.sum(source.c[field]) for field in fields)).group_by(source.c.currency, source.c.ad_type))
     groups = []
-    for currency, count, impressions, clicks, spend, sales, orders, units in result:
-        groups.append({'currency': currency, 'rows': count, 'impressions': int(impressions), 'clicks': int(clicks),
+    for currency, kind, count, impressions, clicks, spend, sales, orders, units in result:
+        groups.append({'currency': currency, 'ad_type': kind, 'attribution_days': 14 if kind == 'sponsored_brands' else 7,
+            'rows': count, 'impressions': int(impressions), 'clicks': int(clicks),
             'spend': format(spend, '.4f'), 'attributed_sales': format(sales, '.4f'), 'orders': int(orders), 'units': int(units),
             'ctr': ratio(clicks, impressions), 'cpc': ratio(spend, clicks), 'acos': ratio(spend, sales), 'roas': ratio(sales, spend)})
     return {'groups': groups}

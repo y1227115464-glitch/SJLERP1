@@ -82,6 +82,7 @@ def fact_values(batch, row):
         fields = ['campaign', 'ad_group', 'sku', 'asin', 'country', 'currency', 'impressions', 'clicks', 'spend', 'attributed_sales', 'orders', 'units']
         result.update({field: data[field] for field in fields})
         result.update({field: date.fromisoformat(data[field]) for field in ['start_date', 'end_date']})
+        result['ad_type'] = data.get('ad_type', 'sponsored_products')
         result.update(identity_key=ad_keys(data)[1], latest_report_at=batch.created_at,
                       report_date=date.fromisoformat(data['report_date']) if data.get('report_date') else None)
     return result
