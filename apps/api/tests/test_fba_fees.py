@@ -52,7 +52,9 @@ def test_effective_intervals_backdated_insert_and_legacy_fallback(system):
     assert r['fba_fee'] == '11.50' and r['product_cost'] == '5.40'
     history = c.get('/api/v1/sales-analysis/fba-fees?sku=SKU-A&limit=1&offset=2', headers=h).json()
     assert history['total'] == 3 and history['items'][0]['effective_until'] == '2025-09-26'
-    assert analysis(c, h, end_date='2025-09-25')['items'][0]['fba_fee'] == '2.50'
+    # UTC midnight orders fall on the previous PDT date; fee versions still use UTC.
+    assert analysis(c, h, end_date='2025-09-24')['items'][0]['fba_fee'] == '2.50'
+    assert analysis(c, h, end_date='2025-09-25')['items'][0]['fba_fee'] == '4.50'
     fee(c, h, effective_from='2025-09-27', low_price_fee='3.5', revision=middle['revision'])
     assert analysis(c, h)['items'][0]['fba_fee'] == '12.00'
     assert c.get('/api/v1/sales-analysis/costs', headers=h).json()['items'] == old_cost

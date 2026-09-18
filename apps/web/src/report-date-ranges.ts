@@ -15,13 +15,14 @@ function calendarDate(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 }
 
-export function reportDateRange(preset: ReportDatePreset, now = new Date(), includeToday = true): ReportDateRange {
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const day = now.getDate();
+export function reportDateRange(preset: ReportDatePreset, now = new Date(), includeToday = true, utcOffsetMinutes?: number): ReportDateRange {
+  const shifted = utcOffsetMinutes === undefined ? null : new Date(now.getTime() + utcOffsetMinutes * 60_000);
+  const year = shifted ? shifted.getUTCFullYear() : now.getFullYear();
+  const month = shifted ? shifted.getUTCMonth() : now.getMonth();
+  const day = shifted ? shifted.getUTCDate() : now.getDate();
   const start = new Date(year, month, day);
   const end = new Date(year, month, day);
-  const daysSinceMonday = (now.getDay() + 6) % 7;
+  const daysSinceMonday = (start.getDay() + 6) % 7;
   switch (preset) {
     case 'last7': start.setDate(day - 6); break;
     case 'last3': start.setDate(day - 2); break;

@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { isRollingReportPreset, reportDatePresets, reportDateRange } from './report-date-ranges';
 import type { ReportDateRange } from './report-date-ranges';
 
-export function ReportDateFilter({ value, onChange }: { value: ReportDateRange; onChange: (value: ReportDateRange) => void }) {
+export function ReportDateFilter({ value, onChange, utcOffsetMinutes }: { value: ReportDateRange; onChange: (value: ReportDateRange) => void; utcOffsetMinutes?: number }) {
   const [open, setOpen] = useState(false);
   const [includeToday, setIncludeToday] = useState(true);
   const pendingPreset = useRef<ReportDateRange | undefined>(undefined);
@@ -28,18 +28,18 @@ export function ReportDateFilter({ value, onChange }: { value: ReportDateRange; 
       label: <Button type="text" aria-pressed={value.preset === preset.value}
         className={value.preset === preset.value ? 'report-date-preset-active' : ''}
         onClick={() => {
-          const range = { ...reportDateRange(preset.value, new Date(), includeToday), preset: preset.value };
+          const range = { ...reportDateRange(preset.value, new Date(), includeToday, utcOffsetMinutes), preset: preset.value };
           pendingPreset.current = range;
           if (range.start === value.start && range.end === value.end) onChange(range);
         }}>{preset.label}</Button>,
-      value: () => { const range = reportDateRange(preset.value, new Date(), includeToday); return [dayjs(range.start), dayjs(range.end)]; },
+      value: () => { const range = reportDateRange(preset.value, new Date(), includeToday, utcOffsetMinutes); return [dayjs(range.start), dayjs(range.end)]; },
     }))}
     panelRender={panel => <div className="report-date-panel">
       <div className="report-date-presets-heading">
         <Checkbox checked={includeToday} onChange={event => {
           const checked = event.target.checked;
           setIncludeToday(checked);
-          if (value.preset && isRollingReportPreset(value.preset)) onChange({ ...reportDateRange(value.preset, new Date(), checked), preset: value.preset });
+          if (value.preset && isRollingReportPreset(value.preset)) onChange({ ...reportDateRange(value.preset, new Date(), checked, utcOffsetMinutes), preset: value.preset });
         }}>含当天</Checkbox>
         <span className="report-date-preset-help">仅影响最近 N 天</span>
       </div>

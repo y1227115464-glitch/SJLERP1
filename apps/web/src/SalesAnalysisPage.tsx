@@ -6,6 +6,7 @@ import { ErrorNotice, PAGE_SIZE, PageHeading, useResource } from './common';
 import { queryPath } from './CatalogShared';
 import { ReportRecordsPage } from './ReportRecords';
 import { ReportDateFilter } from './ReportDateFilter';
+import { SALES_UTC_OFFSET_MINUTES } from './sales-report-time';
 import { ReportSearch } from './ReportSearch';
 import { SalesCosts } from './SalesCosts';
 import type { ReportSearchValue } from './ReportSearch';
@@ -67,7 +68,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
   return <>
     <Card className="section-card"><div className="report-filters">
       <ReportSearch route="/sales-analysis" context={context} value={search} onSearch={setSearch} />
-      <ReportDateFilter value={dates} onChange={setDates} />
+      <ReportDateFilter value={dates} onChange={setDates} utcOffsetMinutes={SALES_UTC_OFFSET_MINUTES} />
       <Select aria-label="销售分析订单范围" value={orderScope} onChange={setOrderScope} options={[{ value: 'shipped', label: '已发货商品' }, { value: 'non_cancelled', label: '全部未取消商品' }]} style={{ width: 165 }} />
       <Button onClick={() => setDates({ start: '', end: '' })}>全部日期</Button>
       <Button icon={<ReloadOutlined />} onClick={resource.reload}>刷新</Button>
@@ -75,7 +76,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
     </div><div className="analysis-exchange"><span>美元折算：1 USD =</span>
       <InputNumber aria-label="每美元兑换加元" min={0.000001} max={100000} precision={6} value={cad} onChange={value => { if (value && value > 0) setCad(value); }} /><span>CAD，</span>
       <InputNumber aria-label="每美元兑换墨西哥比索" min={0.000001} max={100000} precision={6} value={mxn} onChange={value => { if (value && value > 0) setMxn(value); }} /><span>MXN（固定分析汇率，可调整）</span>
-    </div><p className="table-subtext">订单按 UTC 下单日期，广告按日报日期筛选。CMBQ 尺寸别名沿用周利润规则归并，其他 SKU 精确关联。</p></Card>
+    </div><p className="table-subtext">订单按 PDT（全年固定 UTC−7）下单日期筛选，广告按日报日期筛选。CMBQ 尺寸别名沿用周利润规则归并，其他 SKU 精确关联。</p></Card>
     <Alert showIcon type="info" title="利润分析口径" description="销售额 = 商品金额 − 商品优惠；成本与 FBA 费用按销量计算，佣金默认按销售额的 15% 预估。实际广告费取已导入日报，不叠加广告归因销售额。此处利润仍基于预估费用，不是结算净利润；请确认所选期间的销售与广告报告已完整导入。" />
     <ErrorNotice error={resource.error} retry={resource.reload} />
     {!!totals?.incomplete_rows && <Alert className="analysis-alert" showIcon type="warning" title={`${totals.incomplete_rows} 个店铺 SKU 的资料待补充`} description="缺失费用、广告来源或品牌广告分摊的利润留空。请在费用设置或广告数据中补齐。" />}

@@ -17,6 +17,8 @@ from app.reports.service import batch_out, confirm_import, create_preview, get_b
 router = APIRouter(prefix='/api/v1', tags=['Amazon reports'])
 Reader = Annotated[object, Depends(require('reports.view'))]
 Writer = Annotated[object, Depends(require('reports.import'))]
+# Business reporting uses PDT at a fixed UTC-7 offset all year, including winter.
+SALES_REPORT_TIMEZONE = timezone(timedelta(hours=-7), 'PDT')
 
 
 class Confirmation(BaseModel):
@@ -95,11 +97,11 @@ def records_query(model, user, store_id, start_date, end_date, q, sku=''):
         fail(422, 'invalid_period', '开始日期不能晚于结束日期')
     if model is SalesRecord:
         if start_date:
-            query = query.where(model.purchase_date >= datetime.combine(start_date, time.min, timezone.utc))
+            query = query.where(model.purchase_date >= datetime.combine(start_date, time.min, SALES_REPORT_TIMEZONE).astimezone(timezone.utc))
         if end_date:
             if end_date == date.max:
                 fail(422, 'invalid_period', '结束日期超出范围')
-            query = query.where(model.purchase_date < datetime.combine(end_date + timedelta(days=1), time.min, timezone.utc))
+            query = query.where(model.purchase_date < datetime.combine(end_date + timedelta(days=1), time.min, SALES_REPORT_TIMEZONE).astimezone(timezone.utc))
         columns = [model.amazon_order_id, model.sku, model.asin, model.product_name]
     else:
         if start_date:
