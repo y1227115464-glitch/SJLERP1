@@ -21,6 +21,9 @@ export function SalesCosts({ user, stores, selectedStore, sku, initialTab = 'cos
   const [search, setSearch] = useState(sku || '');
   const [editor, setEditor] = useState<SalesCostRate | 'new' | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<SalesCostRate | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [costRevision, setCostRevision] = useState(0);
   const [form] = Form.useForm<CostForm>();
   const list = usePagedList<SalesCostRate>(queryPath('/sales-analysis/costs', {
     store_id: selectedStore === 'all' ? undefined : selectedStore, q: search,
@@ -43,8 +46,21 @@ export function SalesCosts({ user, stores, selectedStore, sku, initialTab = 'cos
         effective_from: values.effective_from.format('YYYY-MM-DD'),
         commission_rate: (commission_percent / 100).toFixed(6), revision: editor && editor !== 'new' ? editor.revision : 0,
       } });
-      setEditor(null); list.reload(); onChanged(); message.success('成本已保存，销售分析已更新');
+      setEditor(null); list.reload(); setCostRevision(value => value + 1); onChanged(); message.success('成本已保存，销售分析已更新');
     } catch (error) { message.error(errorText(error)); } finally { setSaving(false); }
+  };
+  const remove = async () => {
+    if (!deleting) return;
+    setRemoving(true);
+    try {
+      await api(`/sales-analysis/costs/${deleting.id}`, { method: 'DELETE', body: { revision: deleting.revision } });
+      setDeleting(null);
+      if (list.data?.items.length === 1 && list.pagination.current > 1) list.pagination.onChange(list.pagination.current - 1);
+      else list.reload();
+      setCostRevision(value => value + 1); onChanged();
+      message.success('成本与佣金版本已删除，销售分析已更新');
+    } catch (cause) { message.error(errorText(cause)); setDeleting(null); list.reload(); }
+    finally { setRemoving(false); }
   };
   const unit = (value: string | null) => value == null ? <Tag color="warning">待补充</Tag> : `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 9 })}`;
   return <Drawer open title="销售分析费用" width={1080} onClose={onClose}>
@@ -62,7 +78,8 @@ export function SalesCosts({ user, stores, selectedStore, sku, initialTab = 'cos
       { title: '历史单档 FBA / 件', dataIndex: 'fba_fee', render: unit, width: 150 },
       { title: '佣金率', dataIndex: 'commission_rate', render: value => `${(Number(value) * 100).toFixed(2)}%`, width: 90 },
       { title: '费用来源', dataIndex: 'source', width: 230 },
-      { title: '操作', width: 80, fixed: 'right', render: (_, row) => canManage && (row.store_id || user.role === 'admin') && <Button type="link" onClick={() => openEditor(row)}>编辑</Button> },
+      { title: '操作', width: 145, fixed: 'right', render: (_, row) => canManage && (row.store_id || user.role === 'admin') && <Space>
+        <Button type="link" onClick={() => openEditor(row)}>编辑</Button><Button type="link" danger onClick={() => setDeleting(row)}>删除</Button></Space> },
     ]} />
     <Modal open={!!editor} title={editor === 'new' ? '新增费用版本' : '编辑费用版本'} onCancel={() => !saving && setEditor(null)} footer={null} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={save}>
@@ -79,8 +96,18 @@ export function SalesCosts({ user, stores, selectedStore, sku, initialTab = 'cos
         <Button type="primary" htmlType="submit" loading={saving}>保存费用</Button>
       </Form>
     </Modal>
+    <Modal open={!!deleting} title="删除产品成本与佣金版本" onCancel={() => !removing && setDeleting(null)}
+      closable={!removing} maskClosable={!removing} keyboard={!removing} okText="确认删除" cancelText="取消"
+      okButtonProps={{ danger: true }} confirmLoading={removing} cancelButtonProps={{ disabled: removing }} onOk={remove}>
+      {deleting && <><p>{deleting.sku} · {deleting.store_id ? stores.find(store => store.id === deleting.store_id)?.name || '授权店铺' : '通用 · 所有店铺'}</p>
+        <p>生效日期：{deleting.effective_from}</p>
+        <p>产品成本及头程 / 件：{unit(deleting.product_cost)}；另计入库费 / 件：{unit(deleting.inbound_fee)}</p>
+        <p>历史单档 FBA / 件：{unit(deleting.fba_fee)}；佣金率：{(Number(deleting.commission_rate) * 100).toFixed(2)}%</p>
+        <Alert showIcon type="warning" title="将删除此版本的全部成本与佣金配置，并重算利润"
+          description="删除后按订单日期使用更早的适用版本或通用配置；没有适用成本时，相关成本和利润显示待补充。此版本中保留的历史单档 FBA 费用也会移除，独立维护的亚马逊物流费版本仍保留。需要恢复时，请重新新增该费用版本。" /></>}
+    </Modal>
       </> },
-      { key: 'fba', label: '亚马逊物流费', children: <FbaFees user={user} stores={stores} selectedStore={selectedStore} sku={sku} onChanged={onChanged} /> },
+      { key: 'fba', label: '亚马逊物流费', children: <FbaFees key={costRevision} user={user} stores={stores} selectedStore={selectedStore} sku={sku} onChanged={onChanged} /> },
     ]} />
   </Drawer>;
 }

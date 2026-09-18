@@ -55,6 +55,10 @@ class CostInput(Input):
         return normalized_sku(value)
 
 
+class CostDeletion(Input):
+    revision: int = Field(ge=1)
+
+
 def analysis_reader(user: Annotated[User, Depends(require('reports.view'))]):
     if not has_permission(user, 'costs.view'):
         fail(403, 'permission_denied', '当前账号没有成本及利润分析权限，可查看订单明细')
@@ -118,3 +122,26 @@ def save_cost(payload: CostInput, db: DB, user: Reader):
     audit(db, user, 'sales.cost.update', 'sales_cost', row.id, '维护销售分析成本版本', payload.store_id)
     db.commit()
     return cost_out(row)
+
+
+@router.delete('/costs/{identifier}')
+def delete_cost(identifier: str, payload: CostDeletion, db: DB, user: Reader):
+    row = db.scalar(visible_rates(user).where(SalesCostRate.id == identifier))
+    if row is None:
+        fail(404, 'not_found', '成本版本不存在或无权访问')
+    if not has_permission(user, 'quotes.manage') or (row.store_id is None and user.role != 'admin'):
+        fail(403, 'permission_denied', '仅管理员可删除通用成本；经理和财务可删除授权店铺成本')
+    # Share save_cost's lock, then re-read to reject deletion of a concurrently edited version.
+    lock = select(Store).where(Store.id == row.store_id) if row.store_id else select(Store).order_by(Store.id).limit(1)
+    db.scalar(lock.with_for_update())
+    row = db.scalar(select(SalesCostRate).where(SalesCostRate.id == identifier).with_for_update().execution_options(populate_existing=True))
+    if row is None:
+        fail(404, 'not_found', '成本版本已删除，请刷新费用列表')
+    if row.revision != payload.revision:
+        fail(409, 'cost_changed', '该成本版本已被修改，请刷新费用列表并核对后删除')
+    audit(db, user, 'sales.cost.delete', 'sales_cost', row.id,
+          f'删除成本版本：SKU {row.sku}，生效日期 {row.effective_from}，产品及头程 USD {row.product_cost}，'
+          f'另计入库 USD {row.inbound_fee}，历史单档 FBA USD {row.fba_fee}，佣金率 {row.commission_rate}，版本 {row.revision}', row.store_id)
+    db.delete(row)
+    db.commit()
+    return {'deleted': True}

@@ -86,7 +86,7 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
     </Card>
     {historySku && <FeeHistory key={`${historySku}-${revision}`} sku={historySku} storeId={scope}
       user={user} scopeName={scopeName} onClose={() => setHistorySku(null)} onEdit={original => openEditor({ original })}
-      onCopy={copy => openEditor({ copy })} />}
+      onCopy={copy => openEditor({ copy })} onDeleted={() => { list.reload(); onChanged?.(); }} />}
     <Modal open={editor !== null} title={editor?.original ? '修正物流费版本' : '新增物流费版本'} onCancel={() => !saving && setEditor(null)} footer={null} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={save}>
         <Form.Item label="适用范围" name="store_id" rules={[{ required: true }]}><Select disabled={!!editor?.original} options={[
@@ -105,12 +105,28 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
   </>;
 }
 
-function FeeHistory({ sku, storeId, user, scopeName, onClose, onEdit, onCopy }: {
+function FeeHistory({ sku, storeId, user, scopeName, onClose, onEdit, onCopy, onDeleted }: {
   sku: string; storeId?: string; user: User; scopeName: (store: string | null) => string;
-  onClose: () => void; onEdit: (fee: Fee) => void; onCopy: (fee: Fee) => void;
+  onClose: () => void; onEdit: (fee: Fee) => void; onCopy: (fee: Fee) => void; onDeleted: () => void;
 }) {
   const list = usePagedList<Fee>(queryPath('/sales-analysis/fba-fees', { sku, store_id: storeId }));
   const canManage = user.permissions.includes('quotes.manage');
+  const [deleting, setDeleting] = useState<Fee | null>(null);
+  const [busy, setBusy] = useState(false);
+  const { message } = App.useApp();
+  const remove = async () => {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await api(`/sales-analysis/fba-fees/${deleting.id}`, { method: 'DELETE', body: { revision: deleting.revision } });
+      setDeleting(null);
+      if (list.data?.items.length === 1 && list.pagination.current > 1) list.pagination.onChange(list.pagination.current - 1);
+      else list.reload();
+      onDeleted();
+      message.success('物流费版本已删除，生效期间和销售分析已更新');
+    } catch (cause) { message.error(errorText(cause)); setDeleting(null); list.reload(); }
+    finally { setBusy(false); }
+  };
   return <Drawer open title={`${sku} · 物流费历史版本`} width={1050} onClose={onClose}>
     <Alert showIcon type="info" title="调价时新增版本，录入错误时修正已有版本" description="生效期间按各适用范围分别计算，包含开始和结束日期。相同日期只能有一个版本；店铺专用版本优先于通用版本。" />
     <ErrorNotice error={list.error} retry={list.reload} />
@@ -120,10 +136,19 @@ function FeeHistory({ sku, storeId, user, scopeName, onClose, onEdit, onCopy }: 
       { title: '售价 ≤ $9.99 / 件', dataIndex: 'low_price_fee', width: 140, render: usd },
       { title: '售价 > $9.99 / 件', dataIndex: 'high_price_fee', width: 140, render: usd },
       { title: '来源 / 备注', dataIndex: 'source', width: 175 },
-      { title: '操作', width: 190, render: (_, row) => canManage && <Space>
+      { title: '操作', width: 250, render: (_, row) => canManage && <Space>
         <Button type="link" onClick={() => onCopy(row)}>新增调价</Button>
-        {(row.store_id || user.role === 'admin') && <Button type="link" onClick={() => onEdit(row)}>修正</Button>}
+        {(row.store_id || user.role === 'admin') && <><Button type="link" onClick={() => onEdit(row)}>修正</Button>
+          <Button type="link" danger onClick={() => setDeleting(row)}>删除</Button></>}
       </Space> },
     ]} />
+    <Modal open={!!deleting} title="删除物流费版本" onCancel={() => !busy && setDeleting(null)}
+      closable={!busy} maskClosable={!busy} keyboard={!busy} okText="确认删除" cancelText="取消"
+      okButtonProps={{ danger: true }} confirmLoading={busy} cancelButtonProps={{ disabled: busy }} onOk={remove}>
+      {deleting && <><p>{deleting.sku} · {scopeName(deleting.store_id)}</p><p>{period(deleting)}</p>
+        <p>售价 ≤ $9.99：{usd(deleting.low_price_fee)} / 件；售价 &gt; $9.99：{usd(deleting.high_price_fee)} / 件</p>
+        <Alert showIcon type="warning" title="删除后将重新计算适用期间的物流费和利润"
+          description="同范围的前一个版本将延续至下一版本生效前；没有前一个版本时，按店铺专用、通用、历史单档的顺序查找适用费用。均无适用费用时将提示缺少物流费。需要恢复时，请重新新增该版本。" /></>}
+    </Modal>
   </Drawer>;
 }

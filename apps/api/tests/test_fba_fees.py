@@ -166,3 +166,92 @@ def test_postgres_concurrent_fee_create_is_not_lost(system):
                       'low_price_fee': '2', 'high_price_fee': '4'}).status_code
     with ThreadPoolExecutor(2) as pool:
         assert sorted(pool.map(create, range(2))) == [200, 409]
+
+
+def remove_fee(c, h, row):
+    return c.request('DELETE', f"/api/v1/sales-analysis/fba-fees/{row['id']}", headers=h,
+                     json={'revision': row['revision']})
+
+
+def test_delete_fee_rejoins_intervals_and_recalculates_profit(system):
+    c = system['client']
+    h = imported(system, [order(str(day), day=f'2025-09-{day}') for day in range(26, 29)])
+    cost(c, h)
+    first = fee(c, h)
+    middle = fee(c, h, effective_from='2025-09-27', low_price_fee='3')
+    latest = fee(c, h, effective_from='2025-09-28', low_price_fee='4')
+    before = analysis(c, h)
+    assert before['totals']['fba_fee'] == '9.00'
+    assert remove_fee(c, h, middle).status_code == 200
+    history = c.get('/api/v1/sales-analysis/fba-fees?sku=SKU-A', headers=h).json()
+    assert history['total'] == 2
+    assert history['items'][1]['id'] == first['id'] and history['items'][1]['effective_until'] == '2025-09-27'
+    assert analysis(c, h)['totals']['fba_fee'] == '8.00'
+    assert analysis(c, h)['totals']['sales_profit'] != before['totals']['sales_profit']
+    assert remove_fee(c, h, latest).status_code == 200
+    assert catalog(c, h, as_of='2025-09-28')['items'][0]['current']['effective_until'] is None
+    assert analysis(c, h)['totals']['fba_fee'] == '6.00'
+    # No dual-tier version remains: fall back to the original single-tier cost.
+    assert remove_fee(c, h, first).status_code == 200
+    assert analysis(c, h)['totals']['fba_fee'] == '7.50'
+    assert catalog(c, h)['items'][0]['version_count'] == 0
+    recreated = fee(c, h)
+    assert recreated['id'] != first['id'] and recreated['revision'] == 1
+    assert remove_fee(c, h, first).status_code == 404
+
+
+def test_delete_store_fee_falls_back_to_common_then_missing(system):
+    c = system['client']; h = imported(system, [order('FIRST')])
+    common = fee(c, h)
+    specific = fee(c, h, store_id=system['ids']['a'], low_price_fee='3')
+    assert analysis(c, h)['totals']['fba_fee'] == '3.00'
+    assert remove_fee(c, h, specific).status_code == 200
+    assert analysis(c, h)['totals']['fba_fee'] == '2.00'
+    assert remove_fee(c, h, common).status_code == 200
+    assert analysis(c, h)['totals']['fba_fee'] is None
+    assert analysis(c, h)['totals']['actual_profit'] is None
+
+
+def test_delete_fee_permissions_csrf_and_stale_revision(system):
+    from app.models import AuditLog
+    from sqlalchemy import select
+    c = system['client']; h = login(c)
+    common = fee(c, h)
+    a = fee(c, h, store_id=system['ids']['a'])
+    b = fee(c, h, store_id=system['ids']['b'])
+    updated = fee(c, h, revision=common['revision'], high_price_fee='5')
+    assert remove_fee(c, h, common).status_code == 409
+    assert remove_fee(c, {}, updated).status_code == 403
+    fin = login(c, 'finance')
+    assert remove_fee(c, fin, updated).status_code == 403
+    assert remove_fee(c, fin, a).status_code == 404
+    assert remove_fee(c, fin, b).status_code == 200
+    assert remove_fee(c, fin, b).status_code == 404
+    op = login(c, 'operator')
+    assert remove_fee(c, op, a).status_code == 403
+    h = login(c)
+    assert remove_fee(c, h, updated).status_code == 200
+    with system['app'].state.database.session() as db:
+        logs = db.scalars(select(AuditLog).where(AuditLog.action == 'sales.fba_fee.delete')).all()
+        assert len(logs) == 2
+
+
+def test_postgres_concurrent_fee_delete_and_edit(system):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from fastapi.testclient import TestClient
+    if system['app'].state.database.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL row locking')
+    c = system['client']; h = login(c)
+    saved = fee(c, h, store_id=system['ids']['a'])
+    payload = {key: value for key, value in saved.items() if key not in {'id', 'effective_until'}}
+    barrier = Barrier(2)
+    def run(action):
+        with TestClient(system['app']) as separate:
+            separate.cookies.update(c.cookies)
+            barrier.wait()
+            result = remove_fee(separate, h, saved) if action == 'delete' else separate.post(
+                '/api/v1/sales-analysis/fba-fees', headers=h, json={**payload, 'low_price_fee': '7'})
+            return result.status_code
+    with ThreadPoolExecutor(2) as pool:
+        assert sorted(pool.map(run, ['delete', 'edit'])) == [200, 409]

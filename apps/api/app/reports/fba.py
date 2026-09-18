@@ -55,6 +55,10 @@ class FbaFeeInput(Input):
         return value
 
 
+class FbaFeeDeletion(Input):
+    revision: int = Field(ge=1)
+
+
 def visible_fba_rates(user, store_id=None):
     query = select(FbaFeeRate)
     if user.role != 'admin':
@@ -167,3 +171,25 @@ def save_fee(payload: FbaFeeInput, db: DB, user: Reader):
     result = fee_out(row, next_start - timedelta(days=1) if next_start else None)
     db.commit()
     return result
+
+
+@router.delete('/fba-fees/{identifier}')
+def delete_fee(identifier: str, payload: FbaFeeDeletion, db: DB, user: Reader):
+    row = db.scalar(visible_fba_rates(user).where(FbaFeeRate.id == identifier))
+    if row is None:
+        fail(404, 'not_found', '物流费版本不存在或无权访问')
+    if not has_permission(user, 'quotes.manage') or (row.store_id is None and user.role != 'admin'):
+        fail(403, 'permission_denied', '仅管理员可删除通用物流费；经理和财务可删除授权店铺物流费')
+    # Serialize with save_fee before re-reading the version, including concurrent edits.
+    lock = select(Store).where(Store.id == row.store_id) if row.store_id else select(Store).order_by(Store.id).limit(1)
+    db.scalar(lock.with_for_update())
+    row = db.scalar(select(FbaFeeRate).where(FbaFeeRate.id == identifier).with_for_update().execution_options(populate_existing=True))
+    if row is None:
+        fail(404, 'not_found', '物流费版本已删除，请刷新历史版本')
+    if row.revision != payload.revision:
+        fail(409, 'fee_changed', '该物流费版本已被修改，请刷新历史版本并核对后删除')
+    audit(db, user, 'sales.fba_fee.delete', 'fba_fee', row.id,
+          f'删除物流费版本：SKU {row.sku}，生效日期 {row.effective_from}，低价档 USD {row.low_price_fee}，高价档 USD {row.high_price_fee}，版本 {row.revision}', row.store_id)
+    db.delete(row)
+    db.commit()
+    return {'deleted': True}
