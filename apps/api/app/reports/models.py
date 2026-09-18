@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, BigInteger, CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, Store, new_id, now
@@ -27,6 +27,8 @@ class ReportImport(Base):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deletion_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     store: Mapped[Store] = relationship(lazy='joined')
 
 
@@ -101,3 +103,4 @@ class BrandAdAllocation(Base):
     campaign: Mapped[str] = mapped_column(String(500))
     allocations: Mapped[list] = mapped_column(JSON)
     revision: Mapped[int] = mapped_column(BigInteger, default=1)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

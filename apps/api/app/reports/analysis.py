@@ -147,7 +147,7 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         row['ad_spend'] += spend / divisors[currency]
         row['ad_rows'] += count
     mappings = {(item.store_id, item.campaign): item.allocations for item in db.scalars(
-        scope(select(BrandAdAllocation), BrandAdAllocation, user, store_id))}
+        scope(select(BrandAdAllocation).where(BrandAdAllocation.is_deleted.is_(False)), BrandAdAllocation, user, store_id))}
     brand = ad_query.where(AdRecord.currency.in_(CURRENCIES), AdRecord.ad_type == 'sponsored_brands').subquery()
     pending = []
     for store, campaign, currency, spend, count in db.execute(select(brand.c.store_id, brand.c.campaign,
@@ -214,7 +214,7 @@ def suggestions(db: DB, user: Reader, store_id: str | None = None, start_date: d
     values = set(db.scalars(query.limit(limit + 1)).all())
     campaigns = ads.where(AdRecord.ad_type == 'sponsored_brands', AdRecord.currency.in_(CURRENCIES)).with_only_columns(
         AdRecord.store_id, AdRecord.campaign).distinct().subquery()
-    mappings = db.scalars(select(BrandAdAllocation).join(campaigns,
+    mappings = db.scalars(select(BrandAdAllocation).where(BrandAdAllocation.is_deleted.is_(False)).join(campaigns,
         (campaigns.c.store_id == BrandAdAllocation.store_id) & (campaigns.c.campaign == BrandAdAllocation.campaign)))
     values.update(item['sku'] for mapping in mappings for item in mapping.allocations if normalized_sku(q.strip()) in item['sku'])
     values = sorted(values)

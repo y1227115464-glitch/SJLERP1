@@ -15,7 +15,8 @@ def with_ad_products(db, rows):
     if not keys:
         return rows
     mappings = {(item.store_id, item.campaign): item.allocations for group in chunks(keys) for item in db.scalars(
-        select(BrandAdAllocation).where(tuple_(BrandAdAllocation.store_id, BrandAdAllocation.campaign).in_(group)))}
+        select(BrandAdAllocation).where(BrandAdAllocation.is_deleted.is_(False),
+            tuple_(BrandAdAllocation.store_id, BrandAdAllocation.campaign).in_(group)))}
     skus = {item['sku'] for items in mappings.values() for item in items}
     products = {item.internal_sku: item for group in chunks(skus) for item in db.scalars(
         select(Product).where(Product.internal_sku.in_(group)))}

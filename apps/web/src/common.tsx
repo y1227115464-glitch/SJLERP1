@@ -73,6 +73,7 @@ export const permissionLabels: Record<string, string> = {
   'inventory.view': '查看库存与流水', 'inventory.adjust': '登记期初和库存调整', 'warehouses.manage': '管理仓库档案',
 };
 export const actionLabels: Record<string, string> = {
+  'reports.delete': '删除导入批次及数据',
   'sales.cost.update': '维护销售分析成本', 'reports.preview': '预览亚马逊报表', 'reports.confirm': '确认亚马逊报表导入',
   'auth.login': '登录', 'auth.logout': '退出', 'stores.export': '导出店铺', 'stores.create': '新增店铺',
   'stores.update': '更新店铺', 'users.create': '新增账号', 'users.update': '更新账号权限',

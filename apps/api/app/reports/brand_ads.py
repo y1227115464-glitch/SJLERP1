@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from fastapi import Query
 from pydantic import Field, field_validator, model_validator
-from sqlalchemy import func, select, union
+from sqlalchemy import func, or_, select, union
 
 from app.core.api import DB, Page, audit, fail, require_store
 from app.models import Product, Store
@@ -26,11 +26,10 @@ class AllocationItem(Input):
         return value
 
 
-class AllocationInput(Input):
+class AllocationKey(Input):
     store_id: str = Field(min_length=1, max_length=36)
     campaign: str = Field(min_length=1, max_length=500, pattern=r'^[^\x00-\x1f\x7f]+$')
     revision: int = Field(default=0, ge=0)
-    allocations: list[AllocationItem] = Field(min_length=1, max_length=200)
 
     @field_validator('campaign')
     @classmethod
@@ -38,6 +37,10 @@ class AllocationInput(Input):
         if not value.strip():
             raise ValueError('广告活动名称不能为空')
         return value.strip()
+
+
+class AllocationInput(AllocationKey):
+    allocations: list[AllocationItem] = Field(min_length=1, max_length=200)
 
     @model_validator(mode='after')
     def ratios(self):
@@ -49,19 +52,21 @@ class AllocationInput(Input):
 
 
 @router.get('/brand-ad-campaigns')
-def campaigns(db: DB, user: Reader, page: Page, store_id: str | None = None, q: str = Query('', max_length=500)):
+def campaigns(db: DB, user: Reader, page: Page, store_id: str | None = None, q: str = Query('', max_length=500), show_deleted: bool = False):
     facts = scope(select(AdRecord.store_id, AdRecord.campaign), AdRecord, user, store_id).where(AdRecord.ad_type == 'sponsored_brands')
     configured = scope(select(BrandAdAllocation.store_id, BrandAdAllocation.campaign), BrandAdAllocation, user, store_id)
     source = union(facts, configured).subquery()
     query = select(source.c.store_id, Store.name.label('store_name'), source.c.campaign,
-        BrandAdAllocation.allocations, BrandAdAllocation.revision).join(Store, Store.id == source.c.store_id).outerjoin(
+        BrandAdAllocation.allocations, BrandAdAllocation.revision, BrandAdAllocation.is_deleted).join(Store, Store.id == source.c.store_id).outerjoin(
         BrandAdAllocation, (BrandAdAllocation.store_id == source.c.store_id) & (BrandAdAllocation.campaign == source.c.campaign))
+    if not show_deleted:
+        query = query.where(or_(BrandAdAllocation.id.is_(None), BrandAdAllocation.is_deleted.is_(False)))
     if q:
         query = query.where(source.c.campaign.icontains(q, autoescape=True))
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.execute(query.order_by(Store.name, source.c.campaign).offset(page.offset).limit(page.limit))
     return {'items': [{'store_id': row.store_id, 'store_name': row.store_name, 'campaign': row.campaign,
-        'allocations': row.allocations or [], 'revision': row.revision or 0} for row in rows], 'total': total}
+        'allocations': row.allocations or [], 'revision': row.revision or 0, 'is_deleted': bool(row.is_deleted)} for row in rows], 'total': total}
 
 
 @router.get('/brand-ad-campaigns/products')
@@ -76,8 +81,7 @@ def product_options(db: DB, user: Reader, store_id: str, q: str = Query('', max_
     return {'items': [{'sku': sku, 'name': name} for sku, name in sorted(options.items())][:50]}
 
 
-@router.put('/brand-ad-campaigns')
-def save_allocation(payload: AllocationInput, db: DB, user: Writer):
+def lock_allocation(db, user, payload):
     store = require_store(db, user, payload.store_id)
     if not store.is_active:
         fail(409, 'inactive_store', '店铺已停用，不能维护广告分摊')
@@ -89,15 +93,42 @@ def save_allocation(payload: AllocationInput, db: DB, user: Writer):
     row = db.scalar(select(BrandAdAllocation).where(BrandAdAllocation.store_id == store.id,
         BrandAdAllocation.campaign == payload.campaign).with_for_update())
     if (row.revision if row else 0) != payload.revision:
-        fail(409, 'allocation_changed', '该活动分摊已被修改，请关闭后刷新列表再编辑')
+        fail(409, 'allocation_changed', '该活动分摊已被修改或删除，请刷新列表（可显示已删除）后重试')
+    return store, row
+
+
+@router.put('/brand-ad-campaigns')
+def save_allocation(payload: AllocationInput, db: DB, user: Writer):
+    store, row = lock_allocation(db, user, payload)
     if row is None:
         row = BrandAdAllocation(store_id=store.id, campaign=payload.campaign, revision=0)
         db.add(row)
     row.allocations = [item.model_dump(mode='json') for item in payload.allocations]
+    row.is_deleted = False
     row.revision += 1
     db.flush()
     audit(db, user, 'ads.allocation.update', 'brand_ad_allocation', row.id,
         f'维护品牌广告商品分摊，第 {row.revision} 版，共 {len(row.allocations)} 个 SKU', store.id)
     db.commit()
     return {'store_id': store.id, 'store_name': store.name, 'campaign': row.campaign,
-        'allocations': row.allocations, 'revision': row.revision}
+        'allocations': row.allocations, 'revision': row.revision, 'is_deleted': row.is_deleted}
+
+
+@router.delete('/brand-ad-campaigns')
+def delete_allocation(payload: AllocationKey, db: DB, user: Writer):
+    store, row = lock_allocation(db, user, payload)
+    if row is None:
+        exists = db.scalar(select(AdRecord.id).where(AdRecord.store_id == store.id,
+            AdRecord.campaign == payload.campaign, AdRecord.ad_type == 'sponsored_brands').limit(1))
+        if not exists:
+            fail(404, 'not_found', '活动分摊记录不存在')
+        row = BrandAdAllocation(store_id=store.id, campaign=payload.campaign, allocations=[], revision=0)
+        db.add(row)
+    if not row.is_deleted:
+        row.is_deleted = True
+        row.revision += 1
+        db.flush()
+        audit(db, user, 'ads.allocation.delete', 'brand_ad_allocation', row.id,
+            f'删除品牌广告分摊，第 {row.revision} 版；保留原始广告数据，可恢复', store.id)
+        db.commit()
+    return {'store_id': store.id, 'campaign': row.campaign, 'revision': row.revision, 'is_deleted': True}

@@ -1,6 +1,6 @@
 import hashlib
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import insert, select, update
@@ -18,7 +18,8 @@ def batch_out(batch, comparison=None):
               'filename': batch.filename, 'source_total': batch.source_total, 'unique_rows': batch.row_count,
               'duplicate_count': batch.duplicate_count, 'error_count': batch.error_count, 'parser_version': batch.parser_version,
               'created_at': aware(batch.created_at).isoformat(), 'confirmed_at': aware(batch.confirmed_at).isoformat() if batch.confirmed_at else None,
-              'result': batch.result}
+              'result': batch.result, 'deleted_at': aware(batch.deleted_at).astimezone(timezone.utc).isoformat() if batch.deleted_at else None,
+              'deletion_result': batch.deletion_result}
     if comparison:
         result.update(counts=comparison['counts'], verification_token=comparison['verification_token'])
     return result
@@ -109,6 +110,8 @@ def confirm_import(db, user, identifier, verification_token, settings=None):
         fail(409, 'inactive_store', '店铺已停用，不能确认导入')
     # All confirmations serialize on the store, including different users and batches.
     db.refresh(batch)
+    if batch.deleted_at:
+        fail(409, 'batch_deleted', '此批次已删除，如需恢复数据请重新上传原文件')
     if batch.result is not None:
         return batch_out(batch)
     comparison = compare(db, batch, settings)

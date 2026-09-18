@@ -188,3 +188,97 @@ def test_product_resolution_uses_store_mapping_and_store_scoped_asin_fallback(sy
         assert (resolved[0]['asins'] if resolved else None) == expected
     operator = login(c, 'operator')
     assert c.get(f"/api/v1/report-imports/{p['id']}/rows", headers=operator).status_code == 404
+
+
+def remove_allocation(system, headers, **changes):
+    return system['client'].request('DELETE', '/api/v1/brand-ad-campaigns', headers=headers, json={
+        'store_id': system['ids']['a'], 'campaign': '品牌活动', 'revision': 1, **changes})
+
+
+def test_delete_allocation_hides_row_preserves_ads_and_can_restore(system):
+    c = system['client']
+    h = imported(system, [sale()])
+    p, _ = preview(system, brand_file([brand()]), 'ads', h)
+    assert confirm(c, p, h).status_code == 200
+    assert configure(system, h).status_code == 200
+    assert analysis(c, h)['totals']['ad_spend'] == '10.00'
+    deleted = remove_allocation(system, h)
+    assert deleted.status_code == 200 and deleted.json()['revision'] == 2
+    assert c.get('/api/v1/brand-ad-campaigns', headers=h).json()['total'] == 0
+    archived = c.get('/api/v1/brand-ad-campaigns?show_deleted=true', headers=h).json()['items'][0]
+    assert archived['is_deleted'] and len(archived['allocations']) == 2
+    facts = c.get('/api/v1/ad-records', headers=h).json()
+    assert facts['total'] == 1 and facts['items'][0]['spend'] == '10.0000'
+    assert facts['items'][0]['allocation_products'] == []
+    assert c.get(f"/api/v1/report-imports/{p['id']}/rows", headers=h).json()['items'][0]['data']['allocation_products'] == []
+    result = analysis(c, h)
+    assert result['totals']['ad_spend'] is None and result['totals']['actual_profit'] is None
+    assert result['excluded']['unallocated_brand_campaigns'][0]['spend'] == '10.0000'
+    assert c.get('/api/v1/sales-analysis/suggestions', headers=h).json()['items'] == ['SKU-A']
+    assert configure(system, h, revision=1).status_code == 409
+    assert remove_allocation(system, h).status_code == 409
+    assert remove_allocation(system, h, revision=2).status_code == 200
+    assert configure(system, h, revision=2).status_code == 200
+    restored = c.get('/api/v1/brand-ad-campaigns', headers=h).json()['items'][0]
+    assert not restored['is_deleted'] and restored['revision'] == 3
+    assert analysis(c, h)['totals']['ad_spend'] == '10.00'
+
+
+def test_delete_unconfigured_campaign_stays_hidden_after_reimport_and_is_store_scoped(system):
+    c = system['client']
+    p, h = preview(system, brand_file([brand()]), 'ads')
+    assert confirm(c, p, h).status_code == 200
+    other, _ = preview(system, brand_file([brand()]), 'ads', h, store=system['ids']['b'])
+    assert confirm(c, other, h).status_code == 200
+    assert remove_allocation(system, h, revision=0).status_code == 200
+    p, _ = preview(system, brand_file([brand(花费=12)]), 'ads', h)
+    assert confirm(c, p, h).status_code == 200
+    visible = c.get('/api/v1/brand-ad-campaigns', headers=h).json()['items']
+    assert len(visible) == 1 and visible[0]['store_id'] == system['ids']['b']
+    assert c.get('/api/v1/ad-records', headers=h).json()['total'] == 2
+    assert configure(system, h, revision=1).status_code == 200
+    assert c.get('/api/v1/brand-ad-campaigns', headers=h).json()['total'] == 2
+    assert remove_allocation(system, h, campaign='不存在', revision=0).status_code == 404
+    op = login(c, 'operator')
+    assert remove_allocation(system, op, store_id=system['ids']['b'], revision=0).status_code == 404
+    assert c.get('/api/v1/brand-ad-campaigns?show_deleted=true', headers=op).json()['total'] == 1
+    from app.models import Store, User
+    with system['app'].state.database.session() as db:
+        user = db.get(User, system['ids']['operator'])
+        user.role = 'warehouse'
+        db.commit()
+    assert remove_allocation(system, op, revision=2).status_code == 403
+    h = login(c)
+    with system['app'].state.database.session() as db:
+        db.get(Store, system['ids']['a']).is_active = False
+        db.commit()
+    assert remove_allocation(system, h, revision=2).status_code == 409
+
+
+def test_delete_manual_configuration_without_report(system):
+    c = system['client']; h = login(c)
+    assert configure(system, h).status_code == 200
+    assert remove_allocation(system, h).status_code == 200
+    assert c.get('/api/v1/brand-ad-campaigns', headers=h).json()['total'] == 0
+    assert c.get('/api/v1/ad-records', headers=h).json()['total'] == 0
+
+
+def test_postgres_concurrent_delete_and_edit_preserve_revision(system):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from fastapi.testclient import TestClient
+    if system['app'].state.database.engine.dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL row locking')
+    c = system['client']; h = login(c)
+    assert configure(system, h).status_code == 200
+    gate = Barrier(2)
+    def mutate(method):
+        with TestClient(system['app']) as separate:
+            separate.cookies.update(c.cookies)
+            payload = {'store_id': system['ids']['a'], 'campaign': '品牌活动', 'revision': 1}
+            if method == 'PUT':
+                payload['allocations'] = [{'sku': 'SKU-C', 'percentage': 100}]
+            gate.wait()
+            return separate.request(method, '/api/v1/brand-ad-campaigns', headers=h, json=payload).status_code
+    with ThreadPoolExecutor(2) as pool:
+        assert sorted(pool.map(mutate, ['PUT', 'DELETE'])) == [200, 409]

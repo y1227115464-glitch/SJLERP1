@@ -9,6 +9,7 @@ from sqlalchemy.orm import defer
 
 from app.core.api import DB, Page, fail, paginated, require, store_filter
 from app.reports.comparison import compare
+from app.reports.deletion import delete_import, deletion_preview
 from app.reports.ad_products import with_ad_products
 from app.reports.models import AdRecord, ReportImport, SalesRecord
 from app.reports.service import batch_out, confirm_import, create_preview, get_batch
@@ -37,8 +38,10 @@ def preview(db: DB, user: Writer, request: Request, file: UploadFile = File(), k
 
 
 @router.get('/report-imports')
-def batches(db: DB, user: Reader, page: Page, store_id: str | None = None, kind: Literal['sales', 'ads'] | None = None):
+def batches(db: DB, user: Reader, page: Page, store_id: str | None = None, kind: Literal['sales', 'ads'] | None = None, show_deleted: bool = False):
     query = scope(select(ReportImport), ReportImport, user, store_id)
+    if not show_deleted:
+        query = query.where(ReportImport.deleted_at.is_(None))
     if kind:
         query = query.where(ReportImport.kind == kind)
     query = query.options(defer(ReportImport.parsed_rows), defer(ReportImport.errors)).order_by(ReportImport.created_at.desc(), ReportImport.id.desc())
@@ -48,14 +51,15 @@ def batches(db: DB, user: Reader, page: Page, store_id: str | None = None, kind:
 @router.get('/report-imports/{identifier}')
 def batch_detail(identifier: str, db: DB, user: Reader, request: Request):
     batch = get_batch(db, user, identifier)
-    return batch_out(batch, compare(db, batch, request.app.state.settings) if batch.result is None else None) | {'can_confirm': user.id == batch.owner_id}
+    return batch_out(batch, compare(db, batch, request.app.state.settings) if batch.result is None and not batch.deleted_at else None) | {'can_confirm': user.id == batch.owner_id and not batch.deleted_at}
 
 
 @router.get('/report-imports/{identifier}/rows')
 def batch_rows(identifier: str, db: DB, user: Reader, page: Page, request: Request, action: Literal['create', 'update', 'skip', 'conflict', 'error'] | None = None):
     batch = get_batch(db, user, identifier)
-    if batch.result is not None:
-        rows = [{'row': row['row'], 'action': 'source', 'data': row['data'], 'message': '该批次来源数据，确认结果见批次摘要'} for row in batch.parsed_rows]
+    if batch.result is not None or batch.deleted_at:
+        message = '已删除批次的历史来源，删除范围见批次摘要' if batch.deleted_at else '该批次来源数据，确认结果见批次摘要'
+        rows = [{'row': row['row'], 'action': 'source', 'data': row['data'], 'message': message} for row in batch.parsed_rows]
     else:
         rows = [{key: row[key] for key in ['row', 'action', 'message', 'data']} for row in compare(db, batch, request.app.state.settings)['rows']]
     rows += [{'row': error['row'], 'action': 'error', 'data': None, 'message': error['message']} for error in batch.errors]
@@ -73,6 +77,16 @@ def batch_rows(identifier: str, db: DB, user: Reader, page: Page, request: Reque
 @router.post('/report-imports/{identifier}/confirm')
 def confirm(identifier: str, payload: Confirmation, db: DB, user: Writer, request: Request):
     return confirm_import(db, user, identifier, payload.verification_token, request.app.state.settings)
+
+
+@router.get('/report-imports/{identifier}/deletion-preview')
+def preview_deletion(identifier: str, db: DB, user: Writer):
+    return deletion_preview(db, get_batch(db, user, identifier))
+
+
+@router.delete('/report-imports/{identifier}')
+def remove_batch(identifier: str, payload: Confirmation, db: DB, user: Writer):
+    return delete_import(db, user, identifier, payload.verification_token)
 
 
 def records_query(model, user, store_id, start_date, end_date, q, sku=''):
