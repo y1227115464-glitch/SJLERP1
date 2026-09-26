@@ -1,13 +1,14 @@
 """SKU profit estimates from imported order lines and daily advertising facts."""
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 
 from fastapi import Query
-from sqlalchemy import Numeric, cast, func, select, union
+from sqlalchemy import Numeric, cast, func, literal, select, union
 
-from app.core.api import DB, Page
+from app.core.api import DB, Page, require_store
+from app.reports.analysis_periods import Granularity, period_start, period_end
 from app.models import Store
 from app.reports.costs import Reader, router, visible_rates
 from app.reports.fba import FBA_PRICE_THRESHOLD, applicable, visible_fba_rates
@@ -46,14 +47,19 @@ def queries(user, store_id, start_date, end_date, order_scope):
 
 
 def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku='', order_scope='shipped',
-              cad_per_usd=Decimal('1.36'), mxn_per_usd=Decimal('17.66')):
+              cad_per_usd=Decimal('1.36'), mxn_per_usd=Decimal('17.66'), granularity=None):
     sales_query, ad_query = queries(user, store_id, start_date, end_date, order_scope)
+    def bucket(day):
+        if not granularity:
+            return None
+        return period_start(date.fromisoformat(day) if isinstance(day, str) else day, granularity)
     divisors = {'USD': Decimal(1), 'CAD': cad_per_usd, 'MXN': mxn_per_usd}
     # Use explicit report assumptions, not a live or implicit exchange rate.
     excluded_sales = db.scalar(select(func.count()).select_from(sales_query.where(
         (~SalesRecord.currency.in_(CURRENCIES)) | SalesRecord.currency.is_(None)).subquery()))
     excluded_ads = db.scalar(select(func.count()).select_from(ad_query.where(~AdRecord.currency.in_(CURRENCIES)).subquery()))
-    ad_stores = set(db.scalars(ad_query.where(AdRecord.currency.in_(CURRENCIES)).with_only_columns(AdRecord.store_id).distinct()))
+    ad_stores = {(store, bucket(day)) for store, day in db.execute(ad_query.where(AdRecord.currency.in_(CURRENCIES))
+        .with_only_columns(AdRecord.store_id, AdRecord.report_date).distinct())}
     source_sales = sales_query.where(SalesRecord.currency.in_(CURRENCIES))
     source_ads = ad_query.where(AdRecord.currency.in_(CURRENCIES), AdRecord.ad_type == 'sponsored_products')
     for model, query in [(SalesRecord, source_sales), (AdRecord, source_ads)]:
@@ -66,12 +72,13 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         else:
             source_ads = query
     rows = {}
-    def row_for(store, seller_sku):
+    def row_for(store, seller_sku, source_day=None):
         canonical = normalized_sku(seller_sku)
-        key = (store, canonical)
+        day = bucket(source_day)
+        key = (store, canonical, day)
         if key not in rows:
             rows[key] = {'store_id': store, 'sku': canonical, 'quantity': 0, 'sales_rows': 0, 'ad_rows': 0,
-                **{field: ZERO for field in MONEY_FIELDS}, 'issues': set(), 'source_skus': set(), '_sources': set()}
+                **{field: ZERO for field in MONEY_FIELDS}, 'issues': set(), 'source_skus': set(), '_sources': set(), '_period': day}
         rows[key]['source_skus'].add(seller_sku)
         return rows[key]
 
@@ -93,13 +100,17 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
 
     s = source_sales.subquery()
     day = func.date(func.timezone('UTC', s.c.purchase_date)) if db.bind.dialect.name == 'postgresql' else func.date(s.c.purchase_date)
+    # Display buckets use PDT; cost versions continue to use the UTC order date.
+    report_day = (func.date(func.timezone('UTC', s.c.purchase_date) - timedelta(hours=7))
+        if db.bind.dialect.name == 'postgresql' else func.date(s.c.purchase_date, '-7 hours')) if granularity else literal(None)
     price = cast(s.c.data['item_price'].as_string(), Numeric(20, 4))
     discount = func.coalesce(cast(s.c.data['item_promotion_discount'].as_string(), Numeric(20, 4)), 0)
     groups = db.execute(select(s.c.store_id, s.c.sku, day, s.c.currency, func.sum(s.c.quantity), func.sum(price - discount),
-        func.count(), func.count(price), price, s.c.quantity).group_by(s.c.store_id, s.c.sku, day, s.c.currency, price, s.c.quantity))
-    for store, seller_sku, source_day, currency, quantity, sales, count, amount_count, line_price, line_quantity in groups:
+        func.count(), func.count(price), price, s.c.quantity, report_day).group_by(s.c.store_id, s.c.sku, day, s.c.currency, price, s.c.quantity,
+            *([report_day] if granularity else [])))
+    for store, seller_sku, source_day, currency, quantity, sales, count, amount_count, line_price, line_quantity, display_day in groups:
         sales = sales / divisors[currency] if sales is not None else None
-        row = row_for(store, seller_sku)
+        row = row_for(store, seller_sku, display_day)
         quantity = int(quantity)
         row['quantity'] += quantity
         row['sales_rows'] += count
@@ -141,20 +152,29 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
             row['_sources'].add(fee.id)
 
     a = source_ads.subquery()
-    for store, seller_sku, currency, spend, count in db.execute(select(a.c.store_id, a.c.sku, a.c.currency, func.sum(a.c.spend),
-            func.count()).group_by(a.c.store_id, a.c.sku, a.c.currency)):
-        row = row_for(store, seller_sku)
+    ad_day = a.c.report_date if granularity else literal(None)
+    for store, seller_sku, currency, spend, count, display_day in db.execute(select(a.c.store_id, a.c.sku, a.c.currency, func.sum(a.c.spend),
+            func.count(), ad_day).group_by(a.c.store_id, a.c.sku, a.c.currency, *([ad_day] if granularity else []))):
+        row = row_for(store, seller_sku, display_day)
         row['ad_spend'] += spend / divisors[currency]
         row['ad_rows'] += count
     mappings = {(item.store_id, item.campaign): item.allocations for item in db.scalars(
         scope(select(BrandAdAllocation).where(BrandAdAllocation.is_deleted.is_(False)), BrandAdAllocation, user, store_id))}
     brand = ad_query.where(AdRecord.currency.in_(CURRENCIES), AdRecord.ad_type == 'sponsored_brands').subquery()
     pending = []
-    for store, campaign, currency, spend, count in db.execute(select(brand.c.store_id, brand.c.campaign,
-            brand.c.currency, func.sum(brand.c.spend), func.count()).group_by(brand.c.store_id, brand.c.campaign, brand.c.currency)):
+    brand_day = brand.c.report_date if granularity else literal(None)
+    brand_groups = {}
+    for store, campaign, currency, spend, count, display_day in db.execute(select(brand.c.store_id, brand.c.campaign,
+            brand.c.currency, func.sum(brand.c.spend), func.count(), brand_day)
+            .group_by(brand.c.store_id, brand.c.campaign, brand.c.currency, *([brand_day] if granularity else []))):
+        key = (store, campaign, currency, bucket(display_day))
+        previous_spend, previous_count = brand_groups.get(key, (ZERO, 0))
+        brand_groups[key] = (previous_spend + spend, previous_count + count)
+    for (store, campaign, currency, display_day), (spend, count) in brand_groups.items():
         allocations = mappings.get((store, campaign))
         if not allocations:
-            pending.append({'store_id': store, 'campaign': campaign, 'currency': currency, 'spend': format(spend, '.4f')})
+            pending.append({'store_id': store, 'campaign': campaign, 'currency': currency, 'spend': format(spend, '.4f'),
+                **({'period_start': display_day} if granularity else {})})
             continue
         # Allocate whole cents with the largest remainder method before filtering SKUs.
         # This keeps allocations equal to campaign spend and filtered results stable.
@@ -167,18 +187,37 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         for seller_sku, allocated in amounts.items():
             if (q and normalized_sku(q) not in seller_sku) or (sku and normalized_sku(sku) != seller_sku):
                 continue
-            row = row_for(store, seller_sku)
+            row = row_for(store, seller_sku, display_day)
             row['ad_spend'] += Decimal(allocated) / 100
             row['ad_rows'] += count
-    pending_stores = {item['store_id'] for item in pending}
+    pending_stores = {(item['store_id'], item.get('period_start')) for item in pending}
+    if granularity:
+        # The detail endpoint requires one authorized store and SKU. Include empty
+        # buckets, including days with no orders but with (or without) ad reports.
+        observed = [row['_period'] for row in rows.values()]
+        first = start_date or (min(observed) if observed else None)
+        last = end_date or (period_end(max(observed), granularity) if observed else None)
+        if first and last:
+            current = period_start(first, granularity)
+            while current <= last:
+                row_for(store_id, sku, current)
+                finish = period_end(current, granularity)
+                if finish == date.max:
+                    break
+                current = finish + timedelta(days=1)
     names = dict(db.execute(select(Store.id, Store.name)).all())
     for row in rows.values():
         row['store_name'] = names[row['store_id']]
         row['key'] = row['store_id'] + ':' + row['sku']
-        if row['store_id'] not in ad_stores:
+        if granularity:
+            row['period_start'] = max(row['_period'], start_date) if start_date else row['_period']
+            finish = period_end(row['_period'], granularity)
+            row['period_end'] = min(finish, end_date) if end_date else finish
+            row['key'] += ':' + row['_period'].isoformat()
+        if (row['store_id'], row['_period']) not in ad_stores:
             row['ad_spend'] = None
             row['issues'].add('所选期间未导入广告日报')
-        if row['store_id'] in pending_stores:
+        if (row['store_id'], row['_period']) in pending_stores:
             row['ad_spend'] = None
             row['issues'].add('该店铺存在未配置商品分摊的品牌广告，请到广告数据维护')
         for field in ['product_cost', 'fba_fee', 'commission', 'sales', 'ad_spend']:
@@ -201,6 +240,20 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         total['ad_spend'] = total['actual_profit'] = total['actual_profit_rate'] = None
     return values, output(total), {'unsupported_sales_rows': excluded_sales, 'unsupported_ad_rows': excluded_ads,
         'unallocated_brand_campaigns': pending}
+
+
+@router.get('/periods')
+def periods(db: DB, user: Reader, page: Page, store_id: str, sku: str = Query(min_length=1, max_length=120),
+            start_date: date | None = None, end_date: date | None = None, granularity: Granularity = 'day',
+            order_scope: Literal['shipped', 'non_cancelled'] = 'shipped',
+            cad_per_usd: Decimal = Query(Decimal('1.36'), ge=Decimal('.000001'), le=100000),
+            mxn_per_usd: Decimal = Query(Decimal('17.66'), ge=Decimal('.000001'), le=100000)):
+    require_store(db, user, store_id)
+    values, _, excluded = calculate(db, user, store_id, start_date, end_date, sku=sku, order_scope=order_scope,
+        cad_per_usd=cad_per_usd, mxn_per_usd=mxn_per_usd, granularity=granularity)
+    values.sort(key=lambda row: row['period_start'])
+    return {'items': [output(row) for row in values[page.offset:page.offset + page.limit]],
+        'total': len(values), 'granularity': granularity, 'currency': 'USD', 'excluded': excluded}
 
 
 @router.get('/suggestions')

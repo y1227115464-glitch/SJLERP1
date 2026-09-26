@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Button, Card, Col, InputNumber, Row, Select, Statistic, Table, Tabs, Tag, Tooltip } from 'antd';
+import { Alert, Button, Card, Col, InputNumber, Row, Segmented, Select, Statistic, Table, Tabs, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ImportOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { ErrorNotice, PAGE_SIZE, PageHeading, useResource } from './common';
@@ -11,12 +11,49 @@ import { ReportSearch } from './ReportSearch';
 import { SalesCosts } from './SalesCosts';
 import type { ReportSearchValue } from './ReportSearch';
 import { reportDateRange, type ReportDateRange } from './report-date-ranges';
-import type { SalesAnalysis, SalesAnalysisRow } from './sales-analysis-types';
+import type { SalesAnalysis, SalesAnalysisRow, SalesAnalysisPeriod, SalesAnalysisPeriods } from './sales-analysis-types';
+import { defaultSalesGranularity, type SalesGranularity } from './sales-analysis-periods';
 import type { Store, User } from './types';
 
 const money = (value: string | null | undefined) => value == null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
 const percent = (value: string | null | undefined) => value == null ? '—' : `${(Number(value) * 100).toFixed(2)}%`;
 const colored = (value: string | null, format = money) => <span className={value != null && Number(value) < 0 ? 'analysis-negative' : undefined}>{format(value)}</span>;
+
+function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
+  row: SalesAnalysisRow; dates: ReportDateRange; orderScope: string; cad: number; mxn: number;
+  columns: ColumnsType<SalesAnalysisRow>; onCosts: () => void;
+}) {
+  const [granularity, setGranularity] = useState<SalesGranularity>(() => defaultSalesGranularity(dates.start, dates.end));
+  const path = queryPath('/sales-analysis/periods', { store_id: row.store_id, sku: row.sku,
+    start_date: dates.start, end_date: dates.end, order_scope: orderScope,
+    cad_per_usd: String(cad), mxn_per_usd: String(mxn), granularity });
+  const [cursor, setCursor] = useState({ path, page: 1 });
+  const page = cursor.path === path ? cursor.page : 1;
+  const resource = useResource<SalesAnalysisPeriods>(`${path}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`);
+  const periodColumns: ColumnsType<SalesAnalysisPeriod> = [
+    { title: '统计期间', key: 'period', fixed: 'left', width: 220, render: (_, item) => <>
+      <span>{item.period_start === item.period_end ? item.period_start : `${item.period_start} ～ ${item.period_end}`}</span>
+      {!!item.issues.length && <Tooltip title={item.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}
+    </> },
+    ...columns.slice(1) as ColumnsType<SalesAnalysisPeriod>,
+  ];
+  return <div className="analysis-periods">
+    <div className="analysis-period-toolbar"><strong>{row.store_name} · {row.sku}</strong>
+      <Segmented<SalesGranularity> aria-label="SKU 明细聚合方式" value={granularity} onChange={setGranularity} options={[
+        { value: 'day', label: '按天' }, { value: 'week', label: '按周' }, { value: 'month', label: '按月' }, { value: 'year', label: '按年' },
+      ]} />
+    </div>
+    <p className="table-subtext">周按周一至周日，月和年按自然月、自然年汇总；首尾仅统计所选日期。各期间利润率按利润 ÷ 销售额重算，未导入广告日报的期间显示待确认。</p>
+    <ErrorNotice error={resource.error} retry={resource.reload} />
+    <Table<SalesAnalysisPeriod> rowKey="key" size="small" loading={resource.loading} columns={periodColumns}
+      dataSource={resource.data?.items ?? []} scroll={{ x: 1655 }} pagination={{ current: page, pageSize: PAGE_SIZE,
+        total: resource.data?.total ?? 0, showSizeChanger: false, hideOnSinglePage: true,
+        showTotal: total => `共 ${total} 个期间`, onChange: page => setCursor({ path, page }) }} />
+    <div className="analysis-row-note"><span>订单来源 {row.sales_rows} 行 · 广告日报 {row.ad_rows} 行 · 使用 {row.cost_versions} 个费用版本</span>
+      <span>来源 SKU：{row.source_skus.join('、')}</span>{row.issues.map(issue => <Tag key={issue} color="warning">{issue}</Tag>)}
+      <Button size="small" onClick={onCosts}>查看 SKU 费用</Button></div>
+  </div>;
+}
 
 export function SalesAnalysisPage({ user, stores, selectedStore, onImport }: {
   user: User; stores: Store[]; selectedStore: string; onImport: () => void;
@@ -48,6 +85,8 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
   const [cursor, setCursor] = useState({ path, page: 1 });
   const page = cursor.path === path ? cursor.page : 1;
   const resource = useResource<SalesAnalysis>(`${path}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const reload = () => { resource.reload(); setRefreshVersion(value => value + 1); };
   const data = resource.data;
   const totals = data?.totals;
   const costCell = (value: string | null, row: SalesAnalysisRow) => value == null
@@ -73,7 +112,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       <ReportDateFilter value={dates} onChange={setDates} utcOffsetMinutes={SALES_UTC_OFFSET_MINUTES} defaultIncludeToday={false} />
       <Select aria-label="销售分析订单范围" value={orderScope} onChange={setOrderScope} options={[{ value: 'shipped', label: '已发货商品' }, { value: 'non_cancelled', label: '全部未取消商品' }]} style={{ width: 165 }} />
       <Button onClick={() => setDates({ start: '', end: '' })}>全部日期</Button>
-      <Button icon={<ReloadOutlined />} onClick={resource.reload}>刷新</Button>
+      <Button icon={<ReloadOutlined />} onClick={reload}>刷新</Button>
       <Button icon={<SettingOutlined />} onClick={() => setCosts({})}>费用设置</Button>
     </div><div className="analysis-exchange"><span>美元折算：1 USD =</span>
       <InputNumber aria-label="每美元兑换加元" min={0.000001} max={100000} precision={6} value={cad} onChange={value => { if (value && value > 0) setCad(value); }} /><span>CAD，</span>
@@ -98,8 +137,9 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       <Table<SalesAnalysisRow> rowKey="key" className="sales-analysis-table" loading={resource.loading} dataSource={data?.items ?? []} columns={columns}
         scroll={{ x: 1655 }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
           showTotal: total => `共 ${total} 个店铺 SKU`, onChange: page => setCursor({ path, page }) }}
-        expandable={{ expandedRowRender: row => <div className="analysis-row-note"><span>订单来源 {row.sales_rows} 行 · 广告日报 {row.ad_rows} 行 · 使用 {row.cost_versions} 个费用版本</span>
-          <span>来源 SKU：{row.source_skus.join('、')}</span>{row.issues.map(issue => <Tag key={issue} color="warning">{issue}</Tag>)}<Button size="small" onClick={() => setCosts({ sku: row.sku })}>查看 SKU 费用</Button></div> }}
+        expandable={{ expandedRowRender: row => <SkuPeriods key={`${row.key}:${dates.start}:${dates.end}:${refreshVersion}`}
+          row={row} dates={dates} orderScope={orderScope} cad={cad} mxn={mxn} columns={columns}
+          onCosts={() => setCosts({ sku: row.sku })} /> }}
         summary={() => totals && <Table.Summary fixed><Table.Summary.Row>
           <Table.Summary.Cell index={0} />
           <Table.Summary.Cell index={1}><strong>全部筛选结果合计</strong></Table.Summary.Cell>
@@ -108,6 +148,6 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
         </Table.Summary.Row></Table.Summary>} />
       <p className="table-subtext">合计包含全部筛选结果，不只当前页；利润率按合计利润 ÷ 合计销售额重算。销售额为 0 时利润率显示 0.00%。同名 SKU 在不同店铺分别核算。</p>
     </Card>
-    {costs && <SalesCosts user={user} stores={stores} selectedStore={selectedStore} sku={costs.sku} initialTab={costs.tab} onClose={() => setCosts(null)} onChanged={resource.reload} />}
+    {costs && <SalesCosts user={user} stores={stores} selectedStore={selectedStore} sku={costs.sku} initialTab={costs.tab} onClose={() => setCosts(null)} onChanged={reload} />}
   </>;
 }

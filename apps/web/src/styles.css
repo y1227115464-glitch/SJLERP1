@@ -142,6 +142,9 @@
 .analysis-alert { margin-top: 12px; }
 .analysis-cost-toolbar { margin: 20px 0; }
 .analysis-row-note { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.analysis-periods { min-width: 0; padding: 8px 0; }
+.analysis-period-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.analysis-periods .analysis-row-note { margin-top: 16px; }
 .sales-analysis-table .ant-table-cell { font-variant-numeric: tabular-nums; }
 .sales-analysis-table .ant-table-summary { background: #f1f5f9; }
 .sales-currency-summary { max-width: 820px; font-variant-numeric: tabular-nums; }

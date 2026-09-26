@@ -5,6 +5,8 @@ export type SalesAnalysisRow = {
   ad_spend: string | null; actual_profit: string | null; actual_profit_rate: string | null;
   issues: string[]; source_skus: string[]; sales_rows: number; ad_rows: number; cost_versions: number;
 };
+export type SalesAnalysisPeriod = SalesAnalysisRow & { period_start: string; period_end: string };
+export type SalesAnalysisPeriods = { items: SalesAnalysisPeriod[]; total: number };
 export type AnalysisTotals = Omit<SalesAnalysisRow, 'key' | 'store_id' | 'store_name' | 'issues' | 'source_skus' | 'sales_rows' | 'ad_rows' | 'cost_versions'> & { incomplete_rows: number };
 export type SalesAnalysis = { items: SalesAnalysisRow[]; total: number; totals: AnalysisTotals;
   excluded: { unsupported_sales_rows: number; unsupported_ad_rows: number;
