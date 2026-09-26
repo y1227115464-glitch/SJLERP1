@@ -6,13 +6,14 @@ import { queryPath } from './CatalogShared';
 import { ReportBatchDrawer, reportMoney } from './ReportImports';
 import { ReportSearch } from './ReportSearch';
 import { ReportDateFilter } from './ReportDateFilter';
-import type { ReportDateRange } from './report-date-ranges';
+import { reportDateRange, type ReportDateRange } from './report-date-ranges';
 import type { ReportSearchValue } from './ReportSearch';
 import type { ReportData, ReportKind, SummaryGroup } from './report-types';
 import type { User } from './types';
 import { BrandAdAllocations } from './BrandAdAllocations';
 import { ReportProducts } from './ReportProducts';
 import { SALES_UTC_OFFSET_MINUTES, salesReportTime } from './sales-report-time';
+import { salesCurrencySummary } from './sales-currency-summary';
 
 const adName = (value: unknown) => value === 'sponsored_brands' ? '品牌推广' : '商品推广';
 
@@ -28,7 +29,9 @@ const labels: Record<string, string> = { amazon_order_id: '亚马逊订单号', 
 
 export function ReportRecordsPage({ kind, user, selectedStore, onImport, embedded = false }: { kind: ReportKind; user: User; selectedStore: string; onImport: () => void; embedded?: boolean }) {
   const [search, setSearch] = useState<ReportSearchValue>({ q: '', sku: '' });
-  const [dateRange, setDateRange] = useState<ReportDateRange>({ start: '', end: '' });
+  const [dateRange, setDateRange] = useState<ReportDateRange>(() => kind === 'sales' ? {
+    ...reportDateRange('last7', new Date(), false, SALES_UTC_OFFSET_MINUTES), preset: 'last7',
+  } : { start: '', end: '' });
   const { start, end } = dateRange;
   const [status, setStatus] = useState<string | undefined>();
   const [granularity, setGranularity] = useState<'daily' | 'period'>('daily');
@@ -43,29 +46,35 @@ export function ReportRecordsPage({ kind, user, selectedStore, onImport, embedde
   const summary = useResource<{ groups: SummaryGroup[] }>(queryPath(`${route}/summary`, filters));
   const refresh = () => { list.reload(); summary.reload(); };
   const isSales = kind === 'sales';
+  const summaryRows = isSales ? salesCurrencySummary(summary.data?.groups ?? []) : summary.data?.groups ?? [];
+  const missingAmounts = isSales ? summaryRows.reduce((total, row) => total + Number(row.missing_amount_rows ?? 0), 0) : 0;
   return <>{!embedded && <PageHeading eyebrow={isSales ? 'AMAZON SALES RECORDS' : 'AMAZON ADVERTISING'} title={isSales ? '销售数据分析' : '广告数据'}
     description={isSales ? '查看导入后的订单明细、数量和金额，重叠报告按业务键合并并保留来源。' : '支持商品推广（7 天归因）与品牌推广（14 天归因），按活动维护品牌广告商品分摊。'}
     extra={user.permissions.includes('reports.import') && <Button type="primary" icon={<ImportOutlined />} onClick={onImport}>前往导入</Button>} />}
-    <Alert type="info" showIcon title={isSales ? '订单金额口径' : '按天覆盖与统计口径'} description={isSales ? '净额 = 商品金额 + 运费 + 礼品包装费 − 商品优惠 − 运费优惠，不含税、不乘数量。待处理与取消订单分组展示，缺失金额保留为空；不代表结算收入或利润。' : '同店铺商品推广按日期、SKU、活动和广告组去重，品牌推广按日期和活动名称去重，新导入覆盖旧指标。不同广告类型与归因窗口分别汇总，广告归因销售额不叠加到订单销售额。'} />
+    <Alert type="info" showIcon title={isSales ? '订单金额口径' : '按天覆盖与统计口径'} description={isSales ? '净额 = 商品金额 + 运费 + 礼品包装费 − 商品优惠 − 运费优惠，不含税、不乘数量。按当前筛选汇总，全部状态包含待处理及取消订单；缺失金额不按零计算，不代表结算收入或利润。' : '同店铺商品推广按日期、SKU、活动和广告组去重，品牌推广按日期和活动名称去重，新导入覆盖旧指标。不同广告类型与归因窗口分别汇总，广告归因销售额不叠加到订单销售额。'} />
     {!isSales && <Button style={{ marginTop: 16 }} onClick={() => setAllocationsOpen(true)}>品牌广告分摊</Button>}
     <Card className="section-card"><div className="report-filters"><ReportSearch route={route} context={context} value={search} onSearch={setSearch} />
-      <ReportDateFilter value={dateRange} onChange={setDateRange} utcOffsetMinutes={isSales ? SALES_UTC_OFFSET_MINUTES : undefined} />
+      <ReportDateFilter value={dateRange} onChange={setDateRange} utcOffsetMinutes={isSales ? SALES_UTC_OFFSET_MINUTES : undefined} defaultIncludeToday={!isSales} />
       {isSales && <Select aria-label="筛选订单状态" placeholder="全部状态" allowClear value={status} onChange={setStatus} options={['Pending', 'Shipped', 'Cancelled', 'Partially Shipped', 'Unshipped'].map(value => ({ value, label: statusLabels[value] }))} style={{ width: 130 }} />}
       {!isSales && <Select aria-label="广告数据粒度" value={granularity} onChange={setGranularity} options={[{ value: 'daily', label: '日报' }, { value: 'period', label: '历史区间' }]} style={{ width: 130 }} />}
       {!isSales && <Select aria-label="广告类型" placeholder="全部广告类型" allowClear value={adType} onChange={setAdType} options={[{ value: 'sponsored_products', label: '商品推广' }, { value: 'sponsored_brands', label: '品牌推广' }]} style={{ width: 155 }} />}
       <Button onClick={() => setDateRange({ start: '', end: '' })}>全部日期</Button><Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button></div>
-      <p className="table-subtext">{isSales ? '按 PDT（全年固定 UTC−7）下单日期筛选和显示，默认显示全部日期。' : granularity === 'daily' ? '按源报告日期筛选，缺失日期不视为零。旧版多日汇总可切换「历史区间」查看。' : '仅查看旧版多日汇总，筛选需完整包含报告区间；不与日报合计。'}</p>
+      <p className="table-subtext">{isSales ? '按 PDT（全年固定 UTC−7）下单日期筛选和显示，默认最近 7 天，不含当天。' : granularity === 'daily' ? '按源报告日期筛选，缺失日期不视为零。旧版多日汇总可切换「历史区间」查看。' : '仅查看旧版多日汇总，筛选需完整包含报告区间；不与日报合计。'}</p>
     </Card>
-    <ErrorNotice error={summary.error} retry={summary.reload} /><Card className="section-card" title={isSales ? '按币种和状态核对' : '按币种汇总'}>
-      <Table rowKey={row => `${row.currency}-${row.ad_type}-${row.order_status}-${row.item_status}`} dataSource={summary.data?.groups ?? []} loading={summary.loading} pagination={false} scroll={{ x: isSales ? 720 : 1300 }} columns={isSales ? [
-        { title: '币种', dataIndex: 'currency', render: value => value || '未提供' }, { title: '订单 / 商品状态', render: (_, row) => `${statusLabels[String(row.order_status)] || row.order_status} / ${statusLabels[String(row.item_status)] || row.item_status}` },
-        { title: '明细行', dataIndex: 'rows' }, { title: '数量', dataIndex: 'quantity' }, { title: '不含税净额', dataIndex: 'net_amount', render: value => value ?? '未提供' }, { title: '缺少金额行', dataIndex: 'missing_amount_rows' },
+    <ErrorNotice error={summary.error} retry={summary.reload} /><Card className="section-card" title="按币种汇总">
+      <Table className={isSales ? 'sales-currency-summary' : undefined} size={isSales ? 'small' : 'middle'} rowKey={row => `${row.currency}-${row.ad_type}-${row.order_status}-${row.item_status}`} dataSource={summaryRows} loading={summary.loading} pagination={false} scroll={{ x: isSales ? 420 : 1300 }} columns={isSales ? [
+        { title: '币种', dataIndex: 'currency', width: '30%', render: value => <strong>{value || '未提供币种'}</strong> },
+        { title: '商品数量', dataIndex: 'quantity', align: 'right', width: '30%', render: value => Number(value).toLocaleString('en-US') },
+        { title: '不含税净额', dataIndex: 'net_amount', align: 'right', render: (value, row) => <><strong>{value ?? '—'}</strong>{value != null && Number(row.missing_amount_rows) > 0 && <div className="table-subtext">部分金额缺失</div>}</> },
       ] : [
         { title: '类型 / 归因窗口', render: (_, row) => `${adName(row.ad_type)} · ${row.attribution_days} 天` },
         { title: '币种', dataIndex: 'currency' }, { title: '展示', dataIndex: 'impressions' }, { title: '点击', dataIndex: 'clicks' }, { title: '花费', dataIndex: 'spend' },
         { title: '归因销售额', dataIndex: 'attributed_sales' }, { title: '归因订单', dataIndex: 'orders' }, { title: '归因销量', dataIndex: 'units' },
         { title: 'CTR', dataIndex: 'ctr', render: percent }, { title: 'CPC', dataIndex: 'cpc', render: value => value ?? '—' }, { title: 'ACOS', dataIndex: 'acos', render: percent }, { title: 'ROAS', dataIndex: 'roas', render: value => value ?? '—' },
-      ]} /></Card>
+      ]} />
+      {isSales && <p className="table-subtext">汇总当前筛选范围内的全部明细，每个币种一行，不同币种不合计。金额保留两位小数。
+        {missingAmounts > 0 && ` ${missingAmounts.toLocaleString('en-US')} 条明细缺少金额，未计入净额。`}</p>}
+    </Card>
     <ErrorNotice error={list.error} retry={list.reload} /><Card className="section-card" title={isSales ? '订单商品明细' : '广告商品明细'}>
       <Table rowKey="id" loading={list.loading} dataSource={list.data?.items ?? []} pagination={list.pagination} scroll={{ x: isSales ? 1250 : 1500 }} columns={[
         { title: isSales ? '订单 / 店铺' : '活动 / 店铺', width: 240, render: (_, row) => <><Button type="link" onClick={() => setRecord(row)}>{String(isSales ? row.amazon_order_id : row.campaign)}</Button><div className="table-subtext">{row.store_name}{!isSales && ` · ${row.ad_group}`}</div></> },
