@@ -54,7 +54,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
     ? <Button type="link" size="small" onClick={() => setCosts({ sku: row.sku })}>待补充</Button> : money(value);
   const columns: ColumnsType<SalesAnalysisRow> = [
     { title: '店铺 SKU', dataIndex: 'sku', fixed: 'left', width: 220, render: (value, row) => <><strong>{value}</strong>
-      <div className="table-subtext">{row.store_name}</div>{row.issues.length > 0 && <Tooltip title={row.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}</> },
+      {row.issues.length > 0 && <Tooltip title={row.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}</> },
     { title: '销量', dataIndex: 'quantity', width: 80, align: 'right' },
     { title: <span>产品成本、头程<br />及入库配置费 USD</span>, dataIndex: 'product_cost', width: 165, align: 'right', render: costCell },
     { title: <span>FBA 派送费<br />USD</span>, dataIndex: 'fba_fee', width: 130, align: 'right', render: (value, row) => value == null
