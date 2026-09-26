@@ -10,7 +10,7 @@ import { SALES_UTC_OFFSET_MINUTES } from './sales-report-time';
 import { ReportSearch } from './ReportSearch';
 import { SalesCosts } from './SalesCosts';
 import type { ReportSearchValue } from './ReportSearch';
-import type { ReportDateRange } from './report-date-ranges';
+import { reportDateRange, type ReportDateRange } from './report-date-ranges';
 import type { SalesAnalysis, SalesAnalysisRow } from './sales-analysis-types';
 import type { Store, User } from './types';
 
@@ -35,9 +35,11 @@ export function SalesAnalysisPage({ user, stores, selectedStore, onImport }: {
 
 function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]; selectedStore: string }) {
   const [search, setSearch] = useState<ReportSearchValue>({ q: '', sku: '' });
-  const [dates, setDates] = useState<ReportDateRange>({ start: '', end: '' });
-  const [orderScope, setOrderScope] = useState('shipped');
-  const [sort, setSort] = useState('sales');
+  const [dates, setDates] = useState<ReportDateRange>(() => ({
+    ...reportDateRange('last7', new Date(), false, SALES_UTC_OFFSET_MINUTES), preset: 'last7',
+  }));
+  const [orderScope, setOrderScope] = useState('non_cancelled');
+  const [sort, setSort] = useState('sku');
   const [cad, setCad] = useState(1.36);
   const [mxn, setMxn] = useState(17.66);
   const [costs, setCosts] = useState<{ sku?: string; tab?: 'costs' | 'fba' } | null>(null);
@@ -68,7 +70,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
   return <>
     <Card className="section-card"><div className="report-filters">
       <ReportSearch route="/sales-analysis" context={context} value={search} onSearch={setSearch} />
-      <ReportDateFilter value={dates} onChange={setDates} utcOffsetMinutes={SALES_UTC_OFFSET_MINUTES} />
+      <ReportDateFilter value={dates} onChange={setDates} utcOffsetMinutes={SALES_UTC_OFFSET_MINUTES} defaultIncludeToday={false} />
       <Select aria-label="销售分析订单范围" value={orderScope} onChange={setOrderScope} options={[{ value: 'shipped', label: '已发货商品' }, { value: 'non_cancelled', label: '全部未取消商品' }]} style={{ width: 165 }} />
       <Button onClick={() => setDates({ start: '', end: '' })}>全部日期</Button>
       <Button icon={<ReloadOutlined />} onClick={resource.reload}>刷新</Button>
@@ -89,8 +91,9 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       <Col xs={24} sm={12} xl={6}><Card><Statistic title="实际利润率" value={percent(totals?.actual_profit_rate)} /></Card></Col>
     </Row>
     <Card className="section-card" title="SKU 销售与利润" extra={<Select aria-label="销售分析排序" value={sort} onChange={setSort} style={{ width: 180 }} options={[
+      { value: 'sku', label: 'SKU 字母升序（A–Z）' },
       { value: 'sales', label: '销售额从高到低' }, { value: 'quantity', label: '销量从高到低' }, { value: 'actual_profit', label: '实际利润从高到低' },
-      { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' }, { value: 'sku', label: 'SKU 名称' },
+      { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' },
     ]} />}>
       <Table<SalesAnalysisRow> rowKey="key" className="sales-analysis-table" loading={resource.loading} dataSource={data?.items ?? []} columns={columns}
         scroll={{ x: 1655 }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,

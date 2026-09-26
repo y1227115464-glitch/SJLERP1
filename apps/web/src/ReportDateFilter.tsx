@@ -5,9 +5,9 @@ import dayjs from 'dayjs';
 import { isRollingReportPreset, reportDatePresets, reportDateRange } from './report-date-ranges';
 import type { ReportDateRange } from './report-date-ranges';
 
-export function ReportDateFilter({ value, onChange, utcOffsetMinutes }: { value: ReportDateRange; onChange: (value: ReportDateRange) => void; utcOffsetMinutes?: number }) {
+export function ReportDateFilter({ value, onChange, utcOffsetMinutes, defaultIncludeToday = true }: { value: ReportDateRange; onChange: (value: ReportDateRange) => void; utcOffsetMinutes?: number; defaultIncludeToday?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [includeToday, setIncludeToday] = useState(true);
+  const [includeToday, setIncludeToday] = useState(defaultIncludeToday);
   const pendingPreset = useRef<ReportDateRange | undefined>(undefined);
   return <DatePicker.RangePicker className="report-date-filter" classNames={{ popup: { root: 'report-date-popup' } }}
     prefix={<strong>日期：</strong>} separator={<ArrowRightOutlined />} format="YYYY/MM/DD"
