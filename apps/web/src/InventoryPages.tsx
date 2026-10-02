@@ -7,8 +7,8 @@ import { queryPath, useDebouncedValue } from './CatalogShared';
 import { movementKinds, options, RemoteSelect, requestId, required, StoreField, storeParam } from './SupplyShared';
 import type { InventoryBalance, Movement, StockSummary } from './supply-types';
 import type { Store, User } from './types';
-import { adjustmentQuantity, productSoldInStore } from './inventory-adjustment';
-import type { ProductSaleStore } from './inventory-adjustment';
+import { adjustmentQuantity, productBelongsToStore } from './inventory-adjustment';
+import type { Product } from './catalog-types';
 
 export function InventoryPage({ user, stores, selectedStore }: { user: User; stores: Store[]; selectedStore: string }) {
   const [q, setQ] = useState(''); const query = useDebouncedValue(q); const [editing, setEditing] = useState<InventoryBalance | null | undefined>();
@@ -68,21 +68,23 @@ function AdjustmentEditor({ balance, stores, selectedStore, onClose, onSaved }: 
   const storeId = Form.useWatch('store_id', form);
   const productId = Form.useWatch('product_id', form);
   const kind = Form.useWatch('kind', form) ?? 'adjustment';
-  const productStores = useResource<{ items: ProductSaleStore[] }>(!balance && productId ? `/products/${productId}/stores` : null);
-  const productMatchesStore = productSoldInStore(productStores.data?.items, storeId);
-  const checkingProduct = !balance && !!productId && (productStores.loading || !!productStores.error || !productMatchesStore);
-  const productPath = storeId ? queryPath('/products', { is_active: true, store_id: storeId }) : null;
+  const storeBrand = stores.find(store => store.id === storeId)?.brand;
+  const selectedProduct = useResource<Pick<Product, 'brand' | 'is_active'>>(!balance && productId ? `/products/${productId}` : null);
+  const productMatchesStore = productBelongsToStore(selectedProduct.data, storeBrand);
+  const checkingProduct = !balance && !!productId && (selectedProduct.loading || !!selectedProduct.error || !productMatchesStore);
+  const productPath = storeBrand?.trim() ? queryPath('/products', { is_active: true, brand: storeBrand }) : null;
 
   useEffect(() => {
-    if (!balance && productId && (!storeId || (productStores.data && !productMatchesStore))) {
+    if (!balance && productId && (!storeBrand?.trim() || (selectedProduct.data && !productMatchesStore))) {
       form.setFieldValue('product_id', undefined);
       setProductLabel(undefined);
     }
-  }, [balance, form, productId, storeId, productStores.data, productMatchesStore]);
+  }, [balance, form, productId, storeBrand, selectedProduct.data, productMatchesStore]);
 
   return <Modal open title="FBA仓库 期初 / 库存调整" onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okButtonProps={{ disabled: checkingProduct }} okText="确认过账">
     <ErrorNotice error={error} />
-    <ErrorNotice error={productStores.error} retry={productStores.reload} />
+    <ErrorNotice error={selectedProduct.error} retry={selectedProduct.reload} />
+    {!balance && storeId && !storeBrand?.trim() && <Alert className="page-notice" type="warning" showIcon title="当前店铺尚未关联品牌，请先在店铺管理中设置品牌。" />}
     <Form form={form} layout="vertical" disabled={saving} initialValues={{ store_id: balance?.store_id || storeParam(selectedStore), warehouse_id: balance?.warehouse_id, product_id: balance?.product_id, kind: 'adjustment', quantity: 1 }} onValuesChange={changes => {
       if (changes.kind === 'opening') setSign(1);
     }} onFinish={async values => {
@@ -96,7 +98,7 @@ function AdjustmentEditor({ balance, stores, selectedStore, onClose, onSaved }: 
       <StoreField stores={stores} fixed={!!balance} />
       <Form.Item name="warehouse_id" hidden><Input /></Form.Item>
       <Form.Item name="product_id" label="商品 / SKU" rules={required} getValueProps={value => ({ value: checkingProduct ? undefined : value })}>
-        <RemoteSelect key={storeId || 'no-store'} path={productPath} disabled={!!balance || saving || checkingProduct} placeholder={storeId ? '输入名称或 SKU 搜索并选择' : '请先选择店铺'}
+        <RemoteSelect key={storeId || 'no-store'} path={productPath} disabled={!!balance || saving || checkingProduct} placeholder={!storeId ? '请先选择店铺' : !storeBrand?.trim() ? '请先设置店铺品牌' : '输入名称或 SKU 搜索并选择'}
           initialLabel={balance ? `${balance.internal_sku} · ${balance.product_name}` : productLabel}
           onRecord={record => setProductLabel(`${record.internal_sku} · ${record.name_zh || record.name}`)} />
       </Form.Item>

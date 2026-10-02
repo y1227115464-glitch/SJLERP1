@@ -1,18 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { adjustmentQuantity, productSoldInStore } from '../src/inventory-adjustment.ts';
+import { adjustmentQuantity, productBelongsToStore } from '../src/inventory-adjustment.ts';
 
-test('切换到共同售卖的店铺保留 SKU，其他店铺或停用关联不匹配', () => {
-  const stores = [
-    { store_id: 'a', store_active: true, is_active: true },
-    { store_id: 'b', store_active: true, is_active: true },
-    { store_id: 'c', store_active: true, is_active: false },
-    { store_id: 'd', store_active: false, is_active: true },
-  ];
-  assert.equal(productSoldInStore(stores, 'a'), true);
-  assert.equal(productSoldInStore(stores, 'b'), true);
-  for (const id of ['c', 'd', 'unrelated', undefined]) assert.equal(productSoldInStore(stores, id), false);
-  assert.equal(productSoldInStore(undefined, 'a'), false);
+test('SKU 通过品牌归属店铺，无需独立售卖绑定；切换到其他品牌后不匹配', () => {
+  const product = { brand: 'Risepekt', is_active: true };
+  assert.equal(productBelongsToStore(product, 'Risepekt'), true);
+  assert.equal(productBelongsToStore(product, 'Wmiwulien'), false);
+  assert.equal(productBelongsToStore({ brand: 'Wmiwulien', is_active: true }, 'Wmiwulien'), true);
+  assert.equal(productBelongsToStore({ ...product, is_active: false }, 'Risepekt'), false);
+});
+
+test('未配置品牌或尚未读取商品时不能匹配店铺', () => {
+  for (const brand of ['', '   ', undefined]) {
+    assert.equal(productBelongsToStore({ brand: '', is_active: true }, brand), false);
+  }
+  assert.equal(productBelongsToStore(null, 'Risepekt'), false);
+  assert.equal(productBelongsToStore(undefined, 'Risepekt'), false);
 });
 
 test('增加和减少分别提交带符号的变动量，输入数字保持正数', () => {

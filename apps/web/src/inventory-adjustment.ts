@@ -1,11 +1,5 @@
-export interface ProductSaleStore {
-  store_id: string;
-  store_active: boolean;
-  is_active: boolean;
-}
-
-export function productSoldInStore(stores: ProductSaleStore[] | undefined, storeId: string | undefined): boolean {
-  return !!storeId && !!stores?.some(store => store.store_id === storeId && store.store_active && store.is_active);
+export function productBelongsToStore(product: { brand: string; is_active: boolean } | null | undefined, storeBrand: string | undefined): boolean {
+  return !!storeBrand?.trim() && !!product?.is_active && product.brand === storeBrand;
 }
 
 export function adjustmentQuantity(magnitude: number | null | undefined, sign: 1 | -1, kind: string): number {
