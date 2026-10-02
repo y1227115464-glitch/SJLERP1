@@ -24,7 +24,7 @@ const FbaFeesPage = lazy(() => import('./FbaFees').then(module => ({ default: mo
 const InventoryPage = lazy(() => import('./InventoryPages').then(module => ({ default: module.InventoryPage })));
 
 type Page = 'workspace' | 'stores' | 'users' | 'jobs' | 'notifications' | 'attachments' | 'audit' | 'products' | 'suppliers' | 'quotes' | 'purchases' | 'shipments' | 'inventory' | 'imports' | 'sales' | 'ads' | 'fba-fees';
-const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价', purchases: '采购记录', shipments: '发货进度', inventory: '库存管理', imports: '数据导入中心', sales: '销售数据分析', ads: '广告数据', 'fba-fees': '亚马逊物流费' };
+const pageTitles: Record<Page, string> = { workspace: '经营工作台', stores: '店铺管理', users: '账号与权限', jobs: '后台任务', notifications: '站内通知', attachments: '附件中心', audit: '操作日志', products: '商品管理', suppliers: '供应商管理', quotes: '采购报价', purchases: '采购记录', shipments: '发货进度', inventory: 'FBA库存管理', imports: '数据导入中心', sales: '销售数据分析', ads: '广告数据', 'fba-fees': '亚马逊物流费' };
 const pagePermissions: Record<Page, string> = { workspace: 'workspace.view', stores: 'stores.view', users: 'users.manage', jobs: 'jobs.view', notifications: 'notifications.view', attachments: 'files.view', audit: 'audit.view', products: 'products.view', suppliers: 'suppliers.view', quotes: 'quotes.view', purchases: 'purchases.view', shipments: 'shipments.view', inventory: 'inventory.view', imports: 'reports.view', sales: 'reports.view', ads: 'reports.view', 'fba-fees': 'reports.view' };
 function initialPage(): Page { const hash = location.hash.slice(1).split('?')[0]; return hash in pageTitles ? hash as Page : 'workspace'; }
 
@@ -87,7 +87,7 @@ export default function App() {
       can('quotes.view') && can('costs.view') && { key: 'quotes', icon: <DollarOutlined />, label: '采购报价' },
       can('purchases.view') && { key: 'purchases', icon: <FileProtectOutlined />, label: '采购记录' },
       can('shipments.view') && { key: 'shipments', icon: <ContainerOutlined />, label: '发货进度' },
-      can('inventory.view') && { key: 'inventory', icon: <ApartmentOutlined />, label: '库存管理' },
+      can('inventory.view') && { key: 'inventory', icon: <ApartmentOutlined />, label: 'FBA库存管理' },
       can('reports.view') && { key: 'imports', icon: <ImportOutlined />, label: '数据导入中心' },
       can('reports.view') && { key: 'sales', icon: <FileProtectOutlined />, label: '销售数据分析' },
       can('reports.view') && { key: 'ads', icon: <DashboardOutlined />, label: '广告数据' },
