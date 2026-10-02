@@ -19,7 +19,7 @@ def test_purchase_product_intersection_and_scope(system):
     body = {'request_id': str(uuid4()), 'store_id': system['ids']['a'], 'supplier_id': supplier['id'],
         'order_date': '2026-09-10', 'lines': [{'product_id': other['id'], 'quantity': 1, 'unit_price': '1'}]}
     assert client.post('/api/v1/purchase-orders', headers=headers, json=body).status_code == 422
-    client.put(f"/api/v1/products/{product['id']}/stores/{system['ids']['a']}", headers=headers, json={'is_active': False})
+    assert client.patch(f"/api/v1/products/{product['id']}", headers=headers, json={'brand': '其他品牌'}).status_code == 200
     assert candidates()['total'] == 0
     body['lines'][0]['product_id'] = product['id']
     assert client.post('/api/v1/purchase-orders', headers=headers, json=body).status_code == 422
@@ -180,6 +180,6 @@ def test_draft_confirm_rechecks_current_assortment(system):
     draft = post(client, '/purchase-orders', headers, {'request_id': str(uuid4()), 'store_id': system['ids']['a'],
         'supplier_id': supplier['id'], 'order_date': '2026-09-10',
         'lines': [{'product_id': product['id'], 'quantity': 1, 'unit_price': '1'}]})
-    client.put(f"/api/v1/products/{product['id']}/stores/{system['ids']['a']}", headers=headers, json={'is_active': False})
+    assert client.patch(f"/api/v1/products/{product['id']}", headers=headers, json={'brand': '其他品牌'}).status_code == 200
     post(client, f"/purchase-orders/{draft['id']}/confirm", headers, {}, 422)
     assert client.get(f"/api/v1/purchase-orders/{draft['id']}").json()['status'] == 'draft'

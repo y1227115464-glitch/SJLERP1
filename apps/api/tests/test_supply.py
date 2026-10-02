@@ -31,8 +31,11 @@ def fixtures(system):
 
 
 def allow_purchase(system, client, headers, product, supplier):
-    response = client.put(f"/api/v1/products/{product['id']}/stores/{system['ids']['a']}",
-        headers=headers, json={'is_active': True})
+    response = client.patch(f"/api/v1/stores/{system['ids']['a']}",
+        headers=headers, json={'brand': '供应链测试品牌'})
+    assert response.status_code == 200, response.text
+    response = client.patch(f"/api/v1/products/{product['id']}",
+        headers=headers, json={'brand': '供应链测试品牌'})
     assert response.status_code == 200, response.text
     post(client, '/supplier-quotes', headers, {'supplier_id': supplier['id'], 'label': '供货关联',
         'product_ids': [product['id']], 'tiers': [{'min_quantity': 1, 'unit_price': '1'}]})

@@ -1,17 +1,18 @@
-"""Explicit store assortment and supplier eligibility for purchasing."""
+"""Brand-derived store ownership and supplier eligibility for purchasing."""
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import Boolean, ForeignKey, select
+from sqlalchemy import Boolean, ForeignKey, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.api import DB, audit, fail, require
+from app.core.api import DB, fail, require, require_store
 from app.models import Base, Product, QuoteProduct, Store, Supplier, SupplierQuote, User
 from app.schemas import Input
-from app.supply.common import active_products, active_store, scoped
+from app.supply.common import active_products, scoped
 
 
 class ProductStore(Base):
+    # Retained for history; current ownership comes from the store's brand.
     __tablename__ = 'product_stores'
     store_id: Mapped[str] = mapped_column(ForeignKey('stores.id'), primary_key=True)
     product_id: Mapped[str] = mapped_column(ForeignKey('products.id'), primary_key=True, index=True)
@@ -19,8 +20,10 @@ class ProductStore(Base):
 
 
 def store_condition(store_id):
-    return select(ProductStore.product_id).where(ProductStore.product_id == Product.id,
-        ProductStore.store_id == store_id, ProductStore.is_active.is_(True)).exists()
+    matching_stores = select(func.count()).select_from(Store).where(
+        Store.brand == Product.brand).correlate(Product).scalar_subquery()
+    return (func.trim(Product.brand) != '') & (matching_stores == 1) & select(Store.id).where(
+        Store.id == store_id, Store.brand == Product.brand).correlate(Product).exists()
 
 
 def supplier_condition(supplier_id):
@@ -37,7 +40,7 @@ def purchase_products(db, identifiers, store_id, supplier_id):
     eligible = set(db.scalars(select(Product.id).where(Product.id.in_(identifiers),
         store_condition(store_id), supplier_condition(supplier_id))))
     if eligible != identifiers:
-        fail(422, 'product_not_purchasable', '商品须在当前店铺售卖，且关联当前供应商的启用报价；请先维护商品售卖店铺和供应商报价')
+        fail(422, 'product_not_purchasable', '商品品牌须唯一对应当前店铺，且关联当前供应商的启用报价；请核对商品品牌、店铺品牌和供应商报价')
     return products
 
 
@@ -52,28 +55,22 @@ class StoreSaleInput(Input):
 
 @router.get('/{identifier}/stores')
 def stores(identifier: str, db: DB, user: Reader):
-    if db.get(Product, identifier) is None:
+    product = db.get(Product, identifier)
+    if product is None:
         fail(404, 'not_found', '商品不存在')
-    rows = db.execute(scoped(select(Store.id, Store.name, Store.is_active, ProductStore.is_active.label('selling'))
-        .outerjoin(ProductStore, (ProductStore.store_id == Store.id) & (ProductStore.product_id == identifier)),
-        user, Store.id).order_by(Store.name, Store.id).limit(200)).all()
-    return {'items': [{'store_id': row.id, 'store_name': row.name, 'store_active': row.is_active,
-        'is_active': bool(row.selling)} for row in rows]}
+    if not product.brand.strip():
+        return {'brand': product.brand, 'items': []}
+    matches = select(Store).where(Store.brand == product.brand)
+    if db.scalar(select(func.count()).select_from(Store).where(Store.brand == product.brand)) > 1:
+        fail(409, 'ambiguous_store_brand', '商品品牌对应多个店铺，请在店铺管理中核对品牌绑定，确保一对一关联')
+    rows = db.scalars(scoped(matches, user, Store.id)).all()
+    return {'brand': product.brand, 'items': [{'store_id': row.id, 'store_name': row.name,
+        'store_active': row.is_active} for row in rows]}
 
 
 @router.put('/{identifier}/stores/{store_id}')
 def set_store(identifier: str, store_id: str, payload: StoreSaleInput, db: DB, user: Writer):
-    active_store(db, user, store_id)
-    # Serialize concurrent edits to this product's assortment.
-    product = db.scalar(select(Product).where(Product.id == identifier).with_for_update())
-    if product is None:
+    require_store(db, user, store_id)
+    if db.get(Product, identifier) is None:
         fail(404, 'not_found', '商品不存在')
-    record = db.get(ProductStore, (store_id, identifier))
-    if record is None:
-        record = ProductStore(store_id=store_id, product_id=identifier)
-        db.add(record)
-    record.is_active = payload.is_active
-    audit(db, user, 'products.store.update', 'product', identifier,
-        '启用店铺售卖' if payload.is_active else '停用店铺售卖', store_id)
-    db.commit()
-    return {'store_id': store_id, 'product_id': identifier, 'is_active': record.is_active}
+    fail(409, 'store_ownership_read_only', '售卖店铺由商品品牌与店铺品牌自动关联，无需手工设置')

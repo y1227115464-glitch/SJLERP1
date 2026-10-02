@@ -41,11 +41,11 @@
 
 商品列表/检索/品牌与启停筛选、详情/编辑、新增、CSV预览确认；供应商档案新增编辑、启停、详情及关联报价编辑（多商品、阶梯价格、原始报价、待核对状态）。35条用户商品和全部供货来源导入本地真实库；源码仓库不包含用户原文件或真实报价。
 
-## 售卖店铺与采购候选（2026-09-10）
+## 售卖店铺与采购候选（2026-10-02）
 
-商品仍为共享档案；新增 `product_stores(store_id, product_id, is_active)` 显式维护售卖范围，不推断 Seller SKU 映射。
+商品仍为共享档案；每个商品按品牌归属唯一店铺。商品品牌与店铺品牌精确匹配，空品牌不匹配；多个店铺绑定同一品牌时不自动选取。旧 `product_stores` 数据保留，但不再决定归属或采购资格；不推断 Seller SKU 映射。
 
-- `GET /products?store_id=...&supplier_id=...&is_active=true`：同时提供店铺与供应商时取交集，沿用分页/搜索；供应关系使用启用供应商的启用报价与商品关联，多个报价不重复返回商品。店铺须有权限。
-- `GET /products/{id}/stores`：返回 `{items:[{store_id,store_name,store_active,is_active}]}`，仅有权店铺，最多200家。
-- `PUT /products/{id}/stores/{store_id}`：请求 `{is_active:true|false}`，需 `products.manage` 和该店铺权限；只更新目标店铺的售卖关系，写审计。
+- `GET /products?store_id=...&supplier_id=...&is_active=true`：店铺范围按品牌唯一匹配；同时提供店铺与供应商时取交集，沿用分页/搜索；供应关系使用启用供应商的启用报价与商品关联，多个报价不重复返回商品。店铺须有权限。
+- `GET /products/{id}/stores`：返回 `{brand,items:[{store_id,store_name,store_active}]}`，只读返回有权限的唯一归属店铺，停用店铺仍可展示归属。未匹配或无权查看时列表为空，品牌绑定冲突返回409。
+- `PUT /products/{id}/stores/{store_id}`：旧写入入口保留权限检查后返回409 `store_ownership_read_only`，不修改数据。
 - 新增采购、草稿保存与提交、已提交采购追加商品均校验供货范围；已提交采购的历史行可继续跟进数量，不要求追溯改写历史关系。上下文变更清空前端选择。
