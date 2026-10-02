@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Button, Card, Col, Form, Input, InputNumber, Modal, Row, Select, Statistic, Table, Tabs, Tag } from 'antd';
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { api, errorText } from './api';
@@ -7,6 +7,8 @@ import { queryPath, useDebouncedValue } from './CatalogShared';
 import { movementKinds, options, RemoteSelect, requestId, required, StoreField, storeParam } from './SupplyShared';
 import type { InventoryBalance, Movement, StockSummary } from './supply-types';
 import type { Store, User } from './types';
+import { adjustmentQuantity, productSoldInStore } from './inventory-adjustment';
+import type { ProductSaleStore } from './inventory-adjustment';
 
 export function InventoryPage({ user, stores, selectedStore }: { user: User; stores: Store[]; selectedStore: string }) {
   const [q, setQ] = useState(''); const query = useDebouncedValue(q); const [editing, setEditing] = useState<InventoryBalance | null | undefined>();
@@ -57,12 +59,55 @@ function MovementList({ selectedStore }: { selectedStore: string }) {
 }
 
 function AdjustmentEditor({ balance, stores, selectedStore, onClose, onSaved }: { balance: InventoryBalance | null; stores: Store[]; selectedStore: string; onClose: () => void; onSaved: () => void }) {
-  const [form] = Form.useForm(); const [token] = useState(requestId); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  return <Modal open title="FBA仓库 期初 / 库存调整" onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText="确认过账">
-    <Alert type="info" showIcon className="page-notice" title="填入实际变动量" description="增加填正数，减少填负数；期初仅可登记一次。已保存流水不能编辑，请写明盘点或调整原因。" /><ErrorNotice error={error} />
-    <Form form={form} layout="vertical" initialValues={{ store_id: balance?.store_id || storeParam(selectedStore), warehouse_id: balance?.warehouse_id, product_id: balance?.product_id, kind: balance ? 'adjustment' : 'opening', quantity: 1 }} onFinish={async values => {
-      setSaving(true); setError(''); try { await api('/inventory/adjustments', { method: 'POST', body: { ...values, request_id: token } }); onSaved(); }
-      catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
-    }}><StoreField stores={stores} fixed={!!balance} /><Form.Item name="warehouse_id" hidden><Input /></Form.Item><Form.Item name="product_id" label="商品 / SKU" rules={required}><RemoteSelect path="/products?is_active=true" disabled={!!balance} initialLabel={balance ? `${balance.internal_sku} · ${balance.product_name}` : undefined} /></Form.Item><Row gutter={16}><Col span={12}><Form.Item name="kind" label="类型" rules={required}><Select options={[{ value: 'opening', label: '期初库存' }, { value: 'adjustment', label: '库存调整' }]} /></Form.Item></Col><Col span={12}><Form.Item name="quantity" label="变动数量" rules={[...required, { validator: async (_, value) => { if (!value) throw new Error('数量不能为零'); } }]}><InputNumber precision={0} min={-1000000000} max={1000000000} style={{ width: '100%' }} /></Form.Item></Col></Row><Form.Item name="reason" label="原因 / 盘点依据" rules={required}><Input.TextArea rows={3} maxLength={2000} /></Form.Item></Form>
+  const [form] = Form.useForm();
+  const [token] = useState(requestId);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [sign, setSign] = useState<1 | -1>(1);
+  const [productLabel, setProductLabel] = useState<string>();
+  const storeId = Form.useWatch('store_id', form);
+  const productId = Form.useWatch('product_id', form);
+  const kind = Form.useWatch('kind', form) ?? 'adjustment';
+  const productStores = useResource<{ items: ProductSaleStore[] }>(!balance && productId ? `/products/${productId}/stores` : null);
+  const productMatchesStore = productSoldInStore(productStores.data?.items, storeId);
+  const checkingProduct = !balance && !!productId && (productStores.loading || !!productStores.error || !productMatchesStore);
+  const productPath = storeId ? queryPath('/products', { is_active: true, store_id: storeId }) : null;
+
+  useEffect(() => {
+    if (!balance && productId && (!storeId || (productStores.data && !productMatchesStore))) {
+      form.setFieldValue('product_id', undefined);
+      setProductLabel(undefined);
+    }
+  }, [balance, form, productId, storeId, productStores.data, productMatchesStore]);
+
+  return <Modal open title="FBA仓库 期初 / 库存调整" onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okButtonProps={{ disabled: checkingProduct }} okText="确认过账">
+    <ErrorNotice error={error} />
+    <ErrorNotice error={productStores.error} retry={productStores.reload} />
+    <Form form={form} layout="vertical" disabled={saving} initialValues={{ store_id: balance?.store_id || storeParam(selectedStore), warehouse_id: balance?.warehouse_id, product_id: balance?.product_id, kind: 'adjustment', quantity: 1 }} onValuesChange={changes => {
+      if (changes.kind === 'opening') setSign(1);
+    }} onFinish={async values => {
+      if (checkingProduct) return;
+      setSaving(true); setError('');
+      try {
+        await api('/inventory/adjustments', { method: 'POST', body: { ...values, quantity: adjustmentQuantity(values.quantity, sign, values.kind), request_id: token } });
+        onSaved();
+      } catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
+    }}>
+      <StoreField stores={stores} fixed={!!balance} />
+      <Form.Item name="warehouse_id" hidden><Input /></Form.Item>
+      <Form.Item name="product_id" label="商品 / SKU" rules={required} getValueProps={value => ({ value: checkingProduct ? undefined : value })}>
+        <RemoteSelect key={storeId || 'no-store'} path={productPath} disabled={!!balance || saving || checkingProduct} placeholder={storeId ? '输入名称或 SKU 搜索并选择' : '请先选择店铺'}
+          initialLabel={balance ? `${balance.internal_sku} · ${balance.product_name}` : productLabel}
+          onRecord={record => setProductLabel(`${record.internal_sku} · ${record.name_zh || record.name}`)} />
+      </Form.Item>
+      <Row gutter={16}>
+        <Col span={12}><Form.Item name="kind" label="类型" rules={required} extra={kind === 'opening' ? <div style={{ marginTop: 8 }}>每个sku期初库存只能登记一次</div> : undefined}><Select options={[{ value: 'opening', label: '期初库存' }, { value: 'adjustment', label: '库存调整' }]} /></Form.Item></Col>
+        <Col span={12}><Form.Item name="quantity" label="变动数量" rules={[...required, { validator: async (_, value) => { adjustmentQuantity(value, sign, kind); } }]}>
+          <InputNumber precision={0} min={1} max={1000000000} style={{ width: '100%' }} styles={{ prefix: { pointerEvents: 'auto' } }}
+            prefix={<Button type="text" size="small" htmlType="button" disabled={saving || kind === 'opening'} aria-label={sign === 1 ? '当前增加，点击切换为减少' : '当前减少，点击切换为增加'} title={kind === 'opening' ? '期初库存仅支持增加' : '点击切换增加或减少'} onMouseDown={event => event.stopPropagation()} onClick={() => setSign(current => current === 1 ? -1 : 1)}>{sign === 1 ? '+' : '−'}</Button>} />
+        </Form.Item></Col>
+      </Row>
+      <Form.Item name="reason" label="原因 / 盘点依据" rules={required}><Input.TextArea rows={3} maxLength={2000} /></Form.Item>
+    </Form>
   </Modal>;
 }
