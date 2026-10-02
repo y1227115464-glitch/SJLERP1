@@ -10,7 +10,8 @@ import type { Store, User } from './types';
 
 type Fee = { id: string; store_id: string | null; sku: string; effective_from: string; effective_until: string | null;
   low_price_fee: string; high_price_fee: string; source: string; revision: number };
-type FeeProduct = { sku: string; current: Fee | null; legacy_fee: string | null; version_count: number; scheduled_count: number };
+type FeeProduct = { sku: string; current: Fee | null; legacy_fee: string | null; version_count: number; scheduled_count: number;
+  deletable_versions: Record<string, number> };
 type FeeForm = { store_id: string; sku: string; effective_from: Dayjs; low_price_fee: string; high_price_fee: string; source: string };
 type Editor = { original?: Fee; sku?: string; copy?: Fee };
 type Props = { user: User; stores: Store[]; selectedStore: string; sku?: string; onChanged?: () => void };
@@ -25,15 +26,18 @@ export function FbaFeesPage(props: Props) {
 export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) {
   const { message } = App.useApp();
   const [search, setSearch] = useState(sku || '');
+  const [active, setActive] = useState('true');
   const [asOf, setAsOf] = useState(dayjs());
   const [historySku, setHistorySku] = useState<string | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState<FeeProduct | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [form] = Form.useForm<FeeForm>();
   const scope = selectedStore === 'all' ? undefined : selectedStore;
   const list = usePagedList<FeeProduct>(queryPath('/sales-analysis/fba-fees/catalog', {
-    store_id: scope, q: search, as_of: asOf.format('YYYY-MM-DD'),
+    store_id: scope, q: search, as_of: asOf.format('YYYY-MM-DD'), is_active: active === 'all' ? undefined : active,
   }));
   const canManage = user.permissions.includes('quotes.manage');
   const scopeName = (store: string | null) => store ? stores.find(item => item.id === store)?.name || '授权店铺' : '通用 · 所有店铺';
@@ -59,17 +63,34 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
       message.success('物流费已保存，适用期间的销售分析已更新');
     } catch (error) { message.error(errorText(error)); } finally { setSaving(false); }
   };
+  const removeSku = async () => {
+    if (!deleting) return;
+    setDeletingBusy(true);
+    try {
+      await api('/sales-analysis/fba-fees/catalog', { method: 'DELETE', body: {
+        sku: deleting.sku, store_id: scope || null, versions: deleting.deletable_versions,
+      } });
+      setDeleting(null); setRevision(value => value + 1);
+      if (list.data?.items.length === 1 && list.pagination.current > 1) list.pagination.onChange(list.pagination.current - 1);
+      else list.reload();
+      onChanged?.();
+      message.success('该 SKU 已从物流费列表删除');
+    } catch (error) { message.error(errorText(error)); setDeleting(null); list.reload(); }
+    finally { setDeletingBusy(false); }
+  };
   return <>
     <Alert showIcon type="info" title="售价 ≤ $9.99 和售价 > $9.99，各维护一个单件费用"
       description="售价按订单商品金额 ÷ 数量计算，优惠前、不含税和运费；非美元订单按销售分析汇率折算。按 UTC 下单日期选取生效版本。同范围、同 SKU 的新版本生效后，旧版本自动截至前一天。物流费按原始 SKU 精确匹配。" />
     <Card className="section-card" style={{ marginTop: 16 }}>
       <Space wrap className="analysis-cost-toolbar">
         <Input.Search aria-label="搜索物流费 SKU" placeholder="搜索商品或订单 SKU" defaultValue={search} allowClear onSearch={setSearch} style={{ width: 280 }} />
+        <span>商品状态</span><Select aria-label="筛选物流费商品状态" value={active} onChange={setActive} style={{ width: 130 }}
+          options={[{ value: 'all', label: '全部' }, { value: 'true', label: '启用中' }, { value: 'false', label: '已停用' }]} />
         <span>查看日期</span><DatePicker aria-label="查看物流费生效日期" value={asOf} allowClear={false} onChange={value => value && setAsOf(value)} />
         <Button icon={<ReloadOutlined />} onClick={list.reload}>刷新</Button>
         {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor({})}>新增物流费</Button>}
       </Space>
-      <p className="table-subtext">{scope ? '显示所选店铺在查看日期适用的费用，店铺专用版本优先于通用版本。' : '当前显示通用费用；选择顶部店铺可查看专用费用。'} 列表包含商品档案、已导入报告及费用档案中的 SKU，无需先有销售订单。未录入双档费用的历史日期仍沿用原单档费用。</p>
+      <p className="table-subtext">{scope ? '显示所选店铺在查看日期适用的费用，店铺专用版本优先于通用版本。' : '当前显示通用费用；选择顶部店铺可查看专用费用。'} 商品状态按精确 SKU 匹配商品档案；未建档的 SKU 可切换至“全部”查看。未录入双档费用的历史日期仍沿用原单档费用。</p>
       <ErrorNotice error={list.error} retry={list.reload} />
       <Table<FeeProduct> rowKey="sku" loading={list.loading} dataSource={list.data?.items ?? []} pagination={list.pagination} scroll={{ x: 1100 }} columns={[
         { title: 'SKU', dataIndex: 'sku', width: 210, fixed: 'left' },
@@ -78,12 +99,23 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
         { title: '适用范围 / 生效期间', width: 255, render: (_, row) => row.current ? <>{scopeName(row.current.store_id)}<div className="table-subtext">{period(row.current)}</div></> :
           <>{row.legacy_fee !== null ? <>历史单档：{usd(row.legacy_fee)} / 件<div className="table-subtext">尚未维护双档费用</div></> : '尚无适用费用'}</> },
         { title: '调价记录', width: 125, render: (_, row) => <>{row.version_count} 个版本{row.scheduled_count > 0 && <div className="table-subtext">{row.scheduled_count} 个后续版本</div>}</> },
-        { title: '操作', width: 210, fixed: 'right', render: (_, row) => <Space>
+        { title: '操作', width: 270, fixed: 'right', render: (_, row) => <Space>
           {canManage && <Button type="link" onClick={() => openEditor({ sku: row.sku, copy: row.current || undefined })}>{row.current ? '新增调价' : '维护费用'}</Button>}
           <Button type="link" onClick={() => setHistorySku(row.sku)}>历史版本</Button>
+          {canManage && <Button type="link" danger
+            onClick={() => setDeleting(row)}>删除</Button>}
         </Space> },
       ]} />
     </Card>
+    <Modal open={!!deleting} title="删除物流费 SKU 数据" onCancel={() => !deletingBusy && setDeleting(null)}
+      closable={!deletingBusy} maskClosable={!deletingBusy} keyboard={!deletingBusy} okText="确认删除" cancelText="取消"
+      okButtonProps={{ danger: true }} confirmLoading={deletingBusy} cancelButtonProps={{ disabled: deletingBusy }} onOk={removeSku}>
+      {deleting && <><p>SKU：{deleting.sku}</p><p>将从当前范围的物流费列表中删除整行数据，并清除 {Object.keys(deleting.deletable_versions).length} 个可管理的费用版本（含历史和未来版本）。没有费用版本也可以删除。</p>
+        <p>范围：{scope ? scopeName(scope) : '全部授权店铺'}{user.role === 'admin' ? '及通用费用' : '的店铺专用费用（通用费用保留）'}。</p>
+        {user.role === 'admin' && <p>清除通用费用也会影响其他使用该通用费用的店铺。</p>}
+        <Alert showIcon type="warning" title="删除后该 SKU 不再显示在当前范围的物流费列表中"
+          description="刷新或重新导入订单不会使该行重新出现。已有费用版本清除后将重新计算物流费和利润。需要重新维护时，可通过“新增物流费”添加该 SKU。" /></>}
+    </Modal>
     {historySku && <FeeHistory key={`${historySku}-${revision}`} sku={historySku} storeId={scope}
       user={user} scopeName={scopeName} onClose={() => setHistorySku(null)} onEdit={original => openEditor({ original })}
       onCopy={copy => openEditor({ copy })} onDeleted={() => { list.reload(); onChanged?.(); }} />}

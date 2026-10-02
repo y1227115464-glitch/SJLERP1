@@ -175,6 +175,157 @@ def remove_fee(c, h, row):
                      json={'revision': row['revision']})
 
 
+def clear_sku(c, h, row, store_id=None):
+    return c.request('DELETE', '/api/v1/sales-analysis/fba-fees/catalog', headers=h,
+                     json={'sku': row['sku'], 'store_id': store_id, 'versions': row['deletable_versions']})
+
+
+def test_catalog_product_status_filters_before_pagination(system):
+    from app.models import Product
+    c = system['client']
+    h = imported(system, [order('INACTIVE', sku='OFF'), order('UNKNOWN', sku='UNREGISTERED')])
+    with system['app'].state.database.session() as db:
+        db.add_all([Product(internal_sku='ON-A', name='启用甲'), Product(internal_sku='ON-B', name='启用乙'),
+                    Product(internal_sku='OFF', name='停用', is_active=False)])
+        db.commit()
+    fee(c, h, sku='OFF')
+    fee(c, h, sku='FEE-ONLY')
+    active = catalog(c, h, is_active=True, limit=1, offset=1)
+    assert active['total'] == 2 and [r['sku'] for r in active['items']] == ['ON-B']
+    inactive = catalog(c, h, is_active=False)
+    assert inactive['total'] == 1 and inactive['items'][0]['sku'] == 'OFF'
+    assert catalog(c, h)['total'] == 5
+    assert catalog(c, h, is_active=True, q='OFF')['total'] == 0
+    assert catalog(c, h, is_active=False, store_id=system['ids']['b'])['total'] == 1
+
+
+def test_clear_sku_removes_all_dates_and_scopes_and_recalculates(system):
+    from app.models import AuditLog
+    from sqlalchemy import select
+    c = system['client']; h = imported(system, [order('SALE')])
+    cost(c, h)
+    for store in [None, system['ids']['a'], system['ids']['b']]:
+        fee(c, h, store_id=store)
+        fee(c, h, store_id=store, effective_from='2025-10-01')
+    fee(c, h, sku='KEEP')
+    row = catalog(c, h, q='SKU-A')['items'][0]
+    assert len(row['deletable_versions']) == 6
+    result = clear_sku(c, h, row)
+    assert result.status_code == 200 and result.json()['deleted_count'] == 6
+    assert catalog(c, h, q='SKU-A')['total'] == 0
+    assert analysis(c, h)['totals']['fba_fee'] == '2.50'
+    assert catalog(c, h, q='KEEP')['items'][0]['version_count'] == 1
+    assert clear_sku(c, h, row).status_code == 404
+    fee_only = catalog(c, h, q='KEEP')['items'][0]
+    assert clear_sku(c, h, fee_only).status_code == 200
+    assert catalog(c, h, q='KEEP')['total'] == 0
+    with system['app'].state.database.session() as db:
+        assert len(db.scalars(select(AuditLog).where(AuditLog.action == 'sales.fba_fee.delete')).all()) == 7
+
+
+def test_clear_sku_checks_snapshot_and_permissions_atomically(system):
+    c = system['client']; h = login(c)
+    common = fee(c, h)
+    fee(c, h, store_id=system['ids']['a'])
+    fee(c, h, store_id=system['ids']['b'])
+    snapshot = catalog(c, h)['items'][0]
+    fee(c, h, revision=common['revision'], high_price_fee='5')
+    assert clear_sku(c, h, snapshot).status_code == 409
+    snapshot = catalog(c, h)['items'][0]
+    fee(c, h, effective_from='2025-10-01')
+    assert clear_sku(c, h, snapshot).status_code == 409
+    snapshot = catalog(c, h)['items'][0]
+    assert clear_sku(c, {}, snapshot).status_code == 403
+    assert snapshot['version_count'] == 4
+    fin = login(c, 'finance')
+    assert clear_sku(c, fin, snapshot, system['ids']['a']).status_code == 404
+    assert clear_sku(c, fin, snapshot).status_code == 409
+    fin_row = catalog(c, fin)['items'][0]
+    assert fin_row['version_count'] == 3 and len(fin_row['deletable_versions']) == 1
+    assert clear_sku(c, fin, fin_row).status_code == 200
+    op = login(c, 'operator')
+    assert clear_sku(c, op, snapshot).status_code == 403
+    h = login(c)
+    assert catalog(c, h)['items'][0]['version_count'] == 3
+
+
+def test_clear_sku_selected_store_keeps_other_store_versions(system):
+    c = system['client']; h = login(c)
+    fee(c, h)
+    fee(c, h, store_id=system['ids']['a'])
+    other = fee(c, h, store_id=system['ids']['b'])
+    row = catalog(c, h, store_id=system['ids']['a'])['items'][0]
+    assert clear_sku(c, h, row, system['ids']['a']).json()['deleted_count'] == 2
+    remaining = c.get('/api/v1/sales-analysis/fba-fees', headers=h).json()
+    assert remaining['total'] == 1 and remaining['items'][0]['id'] == other['id']
+    assert catalog(c, h, store_id=system['ids']['a'])['total'] == 0
+    assert catalog(c, h, store_id=system['ids']['b'])['total'] == 1
+
+
+def test_delete_zero_version_sku_persists_across_filters_and_imports(system):
+    from app.models import Product, AuditLog
+    from sqlalchemy import select
+    c = system['client']; h = login(c)
+    sku = 'A' * 120
+    with system['app'].state.database.session() as db:
+        db.add_all([Product(internal_sku=sku, name='删除测试'), Product(internal_sku='KEEP', name='保留')])
+        db.commit()
+    row = catalog(c, h, q=sku)['items'][0]
+    assert row['version_count'] == 0 and row['deletable_versions'] == {}
+    result = clear_sku(c, h, row)
+    assert result.status_code == 200 and result.json()['deleted_count'] == 0
+    assert catalog(c, h, q=sku)['total'] == 0
+    assert catalog(c, h, is_active=True, limit=1)['items'][0]['sku'] == 'KEEP'
+    assert catalog(c, h, store_id=system['ids']['a'], q=sku)['total'] == 0
+    imported(system, [order('LATER', sku=sku)], h=h)
+    assert catalog(c, h, q=sku)['total'] == 0
+    with system['app'].state.database.session() as db:
+        assert db.scalar(select(Product).where(Product.internal_sku == sku)) is not None
+        logs = db.scalars(select(AuditLog).where(AuditLog.action == 'sales.fba_sku.delete')).all()
+        assert len(logs) == 1 and sku in logs[0].summary
+    fee(c, h, sku=sku)
+    assert catalog(c, h, q=sku)['items'][0]['version_count'] == 1
+
+
+def test_delete_zero_versions_store_permissions_and_restore(system):
+    from app.models import Product
+    c = system['client']; h = login(c)
+    with system['app'].state.database.session() as db:
+        db.add(Product(internal_sku='ZERO', name='未维护'))
+        db.commit()
+    row = catalog(c, h)['items'][0]
+    assert clear_sku(c, {}, row).status_code == 403
+    op = login(c, 'operator')
+    assert clear_sku(c, op, row).status_code == 403
+    fin = login(c, 'finance')
+    assert clear_sku(c, fin, row, system['ids']['a']).status_code == 404
+    assert clear_sku(c, fin, row).status_code == 200
+    assert catalog(c, fin)['total'] == 0
+    assert catalog(c, fin, store_id=system['ids']['b'])['total'] == 0
+    h = login(c)
+    assert catalog(c, h, store_id=system['ids']['a'])['total'] == 1
+    assert catalog(c, h)['total'] == 1
+    assert clear_sku(c, h, row, system['ids']['a']).status_code == 200
+    assert catalog(c, h)['total'] == 0
+    fee(c, h, sku='ZERO')
+    assert catalog(c, h)['total'] == 1
+    assert catalog(c, h, store_id=system['ids']['a'])['total'] == 1
+    assert catalog(c, h, store_id=system['ids']['b'])['total'] == 1
+
+
+def test_zero_version_delete_rejects_new_fee_and_unknown_sku(system):
+    from app.models import Product
+    c = system['client']; h = login(c)
+    with system['app'].state.database.session() as db:
+        db.add(Product(internal_sku='ZERO', name='未维护'))
+        db.commit()
+    row = catalog(c, h)['items'][0]
+    fee(c, h, sku='ZERO')
+    assert clear_sku(c, h, row).status_code == 409
+    assert catalog(c, h)['items'][0]['version_count'] == 1
+    assert clear_sku(c, h, {'sku': 'UNKNOWN', 'deletable_versions': {}}).status_code == 404
+
+
 def test_delete_fee_rejoins_intervals_and_recalculates_profit(system):
     c = system['client']
     h = imported(system, [order(str(day), day=f'2025-09-{day}') for day in range(26, 29)])

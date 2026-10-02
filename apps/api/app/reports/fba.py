@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import Query
 from pydantic import Field, field_validator
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Integer, Numeric, String, UniqueConstraint, func, or_, select, union
+from sqlalchemy import CheckConstraint, Date, ForeignKey, Integer, Numeric, String, UniqueConstraint, delete, func, or_, select, union
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.api import DB, Page, audit, fail, require_store, store_filter
@@ -55,8 +55,28 @@ class FbaFeeInput(Input):
         return value
 
 
+class FbaCatalogDeletion(Base):
+    """Persist row removals even when products/reports still contain the SKU."""
+    __tablename__ = 'fba_catalog_deletions'
+    scope_key: Mapped[str] = mapped_column(String(36), primary_key=True)
+    sku: Mapped[str] = mapped_column(String(120), primary_key=True)
+
+
 class FbaFeeDeletion(Input):
     revision: int = Field(ge=1)
+
+
+class FbaSkuDeletion(Input):
+    sku: str = Field(min_length=1, max_length=120)
+    store_id: str | None = Field(default=None, max_length=36)
+    versions: dict[str, int]
+
+
+def manageable_fba_rates(user, store_id=None):
+    query = visible_fba_rates(user, store_id)
+    if user.role != 'admin':
+        query = query.where(FbaFeeRate.store_id.is_not(None))
+    return query
 
 
 def visible_fba_rates(user, store_id=None):
@@ -108,11 +128,7 @@ def fees(db: DB, user: Reader, page: Page, store_id: str | None = None, sku: str
     return {'items': rows[page.offset:page.offset + page.limit], 'total': len(rows)}
 
 
-@router.get('/fba-fees/catalog')
-def fee_catalog(db: DB, user: Reader, page: Page, store_id: str | None = None,
-                as_of: date = Query(default_factory=date.today), q: str = Query('', max_length=120)):
-    if store_id:
-        require_store(db, user, store_id)
+def catalog_skus(user, store_id=None):
     sources = [select(Product.internal_sku.label('sku')),
         visible_rates(user, store_id).with_only_columns(SalesCostRate.sku.label('sku')),
         visible_fba_rates(user, store_id).with_only_columns(FbaFeeRate.sku.label('sku'))]
@@ -124,7 +140,30 @@ def fee_catalog(db: DB, user: Reader, page: Page, store_id: str | None = None,
             query = query.where(model.store_id == store_id)
         sources.append(query)
     catalog = union(*sources).subquery()
+    hidden = select(FbaCatalogDeletion.sku).where(FbaCatalogDeletion.scope_key == '*')
+    if store_id:
+        hidden = select(FbaCatalogDeletion.sku).where(FbaCatalogDeletion.scope_key.in_(['*', store_id]))
+    else:
+        stores = select(Store.id)
+        if user.role != 'admin':
+            stores = stores.where(store_filter(user, Store.id))
+        # An aggregate view omits a row once every visible store removed it.
+        all_stores_hidden = select(FbaCatalogDeletion.sku).where(FbaCatalogDeletion.scope_key.in_(stores)).group_by(
+            FbaCatalogDeletion.sku).having(func.count() == select(func.count()).select_from(stores.subquery()).scalar_subquery())
+        hidden = union(hidden, all_stores_hidden)
+    return select(catalog.c.sku).where(catalog.c.sku.not_in(hidden))
+
+
+@router.get('/fba-fees/catalog')
+def fee_catalog(db: DB, user: Reader, page: Page, store_id: str | None = None,
+                as_of: date = Query(default_factory=date.today), q: str = Query('', max_length=120),
+                is_active: bool | None = None):
+    if store_id:
+        require_store(db, user, store_id)
+    catalog = catalog_skus(user, store_id).subquery()
     query = select(catalog.c.sku).where(catalog.c.sku.icontains(q.strip(), autoescape=True))
+    if is_active is not None:
+        query = query.where(catalog.c.sku.in_(select(Product.internal_sku).where(Product.is_active == is_active)))
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     skus = db.scalars(query.order_by(catalog.c.sku).limit(page.limit).offset(page.offset)).all()
     rates = defaultdict(list)
@@ -140,6 +179,8 @@ def fee_catalog(db: DB, user: Reader, page: Page, store_id: str | None = None,
         versions = fee_versions(rates[sku])
         items.append({'sku': sku, 'current': next((row for row in versions if current and row['id'] == current.id), None),
             'legacy_fee': format(old.fba_fee, 'f') if old and old.fba_fee is not None else None,
+            'deletable_versions': {row.id: row.revision for row in rates[sku]
+                if has_permission(user, 'quotes.manage') and (row.store_id is not None or user.role == 'admin')},
             'version_count': len(versions), 'scheduled_count': sum(row.effective_from > as_of for row in rates[sku])})
     return {'items': items, 'total': total}
 
@@ -164,6 +205,11 @@ def save_fee(payload: FbaFeeInput, db: DB, user: Reader):
     for key, value in payload.model_dump(exclude={'revision'}).items():
         setattr(row, key, value)
     row.revision += 1
+    # Explicitly adding a fee restores the removed row in this scope.
+    restore = delete(FbaCatalogDeletion).where(FbaCatalogDeletion.sku == payload.sku)
+    if payload.store_id:
+        restore = restore.where(FbaCatalogDeletion.scope_key.in_(['*', scope]))
+    db.execute(restore)
     db.flush()
     audit(db, user, 'sales.fba_fee.update', 'fba_fee', row.id, '维护亚马逊物流费版本', payload.store_id)
     next_start = db.scalar(select(func.min(FbaFeeRate.effective_from)).where(FbaFeeRate.scope_key == scope,
@@ -171,6 +217,42 @@ def save_fee(payload: FbaFeeInput, db: DB, user: Reader):
     result = fee_out(row, next_start - timedelta(days=1) if next_start else None)
     db.commit()
     return result
+
+
+@router.delete('/fba-fees/catalog')
+def delete_sku_fees(payload: FbaSkuDeletion, db: DB, user: Reader):
+    if not has_permission(user, 'quotes.manage'):
+        fail(403, 'permission_denied', '无权删除物流费')
+    if payload.store_id:
+        require_store(db, user, payload.store_id)
+    # Use the same store locks as save_fee/delete_fee, in a stable order. This
+    # also prevents newly created versions from escaping the snapshot check.
+    locks = select(Store).order_by(Store.id)
+    if user.role != 'admin':
+        locks = locks.where(store_filter(user, Store.id))
+    db.scalars(locks.with_for_update()).all()
+    catalog = catalog_skus(user, payload.store_id).subquery()
+    if db.scalar(select(catalog.c.sku).where(catalog.c.sku == payload.sku)) is None:
+        fail(404, 'not_found', '该 SKU 不在当前物流费列表中，请刷新列表')
+    rows = db.scalars(manageable_fba_rates(user, payload.store_id).where(
+        FbaFeeRate.sku == payload.sku).with_for_update().execution_options(populate_existing=True)).all()
+    if {row.id: row.revision for row in rows} != payload.versions:
+        fail(409, 'fee_changed', '该 SKU 的物流费版本已变化，请刷新列表并核对后删除')
+    for row in rows:
+        audit(db, user, 'sales.fba_fee.delete', 'fba_fee', row.id,
+              f'清除 SKU 物流费：SKU {row.sku}，生效日期 {row.effective_from}，低价档 USD {row.low_price_fee}，高价档 USD {row.high_price_fee}，版本 {row.revision}', row.store_id)
+        db.delete(row)
+    scopes = [payload.store_id] if payload.store_id else (['*'] if user.role == 'admin' else
+        list(db.scalars(select(Store.id).where(store_filter(user, Store.id)))))
+    if not scopes:
+        fail(403, 'permission_denied', '没有可管理的店铺')
+    for scope in scopes:
+        if db.get(FbaCatalogDeletion, (scope, payload.sku)) is None:
+            db.add(FbaCatalogDeletion(scope_key=scope, sku=payload.sku))
+    audit(db, user, 'sales.fba_sku.delete', 'fba_sku', new_id(),
+          f'删除物流费 SKU 行：{payload.sku}，清除 {len(rows)} 个版本', payload.store_id)
+    db.commit()
+    return {'deleted': True, 'deleted_count': len(rows)}
 
 
 @router.delete('/fba-fees/{identifier}')

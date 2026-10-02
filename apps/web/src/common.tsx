@@ -73,6 +73,7 @@ export const permissionLabels: Record<string, string> = {
   'inventory.view': '查看库存与流水', 'inventory.adjust': '登记期初和库存调整', 'warehouses.manage': '管理仓库档案',
 };
 export const actionLabels: Record<string, string> = {
+  'sales.fba_sku.delete': '删除物流费 SKU 数据',
   'sales.cost.delete': '删除产品成本与佣金版本',
   'sales.fba_fee.update': '维护物流费版本', 'sales.fba_fee.delete': '删除物流费版本',
   'reports.delete': '删除导入批次及数据',
@@ -89,4 +90,4 @@ export const actionLabels: Record<string, string> = {
   'inventory.adjust': '调整库存', 'warehouses.create': '新增仓库', 'warehouses.update': '更新仓库档案',
   'jobs.succeeded': '任务完成', 'jobs.failed': '任务失败', 'files.upload': '上传附件', 'files.download': '下载附件',
 };
-export const resourceLabels: Record<string, string> = { fba_fee: '物流费版本', sales_cost: '销售分析成本', report_import: '亚马逊报表导入', user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入', purchase_order: '采购单', shipment: '货件', inventory: '库存', warehouse: '仓库' };
+export const resourceLabels: Record<string, string> = { fba_sku: '物流费 SKU', fba_fee: '物流费版本', sales_cost: '销售分析成本', report_import: '亚马逊报表导入', user: '账号', store: '店铺', job: '后台任务', attachment: '附件', approval: '审批', product: '商品', supplier: '供应商', supplier_quote: '采购报价', product_import: '商品导入', purchase_order: '采购单', shipment: '货件', inventory: '库存', warehouse: '仓库' };

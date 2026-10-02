@@ -58,6 +58,10 @@ SKU 销售与利润列表每页显示 200 条，不足 200 条时显示实际数
 
 左侧「亚马逊物流费」提供所有商品的维护入口，也可从「费用设置 → 亚马逊物流费」进入。列表包含商品档案 SKU、可见订单及广告 SKU、已维护成本与物流费 SKU；没有订单或没有费用的商品也可以维护。列表按原始 SKU 精确匹配，不自动推断商品内部 SKU 与不同 Seller SKU 的关系。
 
+商品状态可选「全部、启用中、已停用」，默认「启用中」，按精确 SKU 对应商品档案的启停状态筛选；未建档的 SKU 仅在「全部」中展示。筛选作用于完整目录后再分页。
+
+SKU 行末的「删除」清除当前范围内可管理的全部双档物流费版本（含历史及未来版本）。选择店铺时范围为该店铺及通用费用，全部店铺时为所有可见范围；通用费用仅管理员可清除。确认框显示 SKU、范围和版本数量，后台检查整个版本集合，新增、修改或删除造成的变化均要求刷新确认，删除逐版本记入审计日志。即使调价记录为 0 个版本也允许删除。删除后整行从当前范围的列表中移除，商品、订单及历史单档成本保留，刷新、切换状态或重新导入订单不会使其重新出现。通过“新增物流费”主动添加该 SKU 可恢复展示。删除通用费用会影响其他使用通用费用的店铺。
+
 每个 SKU 的物流费版本独立保存适用范围、生效日期、两个单件费用和来源备注：
 
 - **售价 ≤ $9.99**（包含 9.99）与 **售价 > $9.99** 各录入一个单件物流费，单位 USD。两档均必填，0 表示明确无费用，不把未知值当作 0。
@@ -81,7 +85,8 @@ SKU 销售与利润列表每页显示 200 条，不足 200 条时显示实际数
 - `GET /api/v1/sales-analysis/costs`：可见费用版本列表。
 - `POST /api/v1/sales-analysis/costs`：以 scope + sku + effective_from 保存费用版本，revision=0 表示新增；编辑必须传当前 revision。
 - `DELETE /api/v1/sales-analysis/costs/{id}`：删除指定成本与佣金版本，必须传当前 revision；通用版本仅管理员可删除，店铺版本须有 `quotes.manage` 及店铺授权。
-- `GET /api/v1/sales-analysis/fba-fees/catalog`：分页 SKU 目录，支持 store_id、as_of、q；包含当日费用、历史单档参考值、版本数和未来版本数。
+- `GET /api/v1/sales-analysis/fba-fees/catalog`：分页 SKU 目录，支持 store_id、as_of、q、is_active（省略时返回全部）；包含当日费用、历史单档参考值、版本数、未来版本数及可删除版本映射 deletable_versions。
+- `DELETE /api/v1/sales-analysis/fba-fees/catalog`：传 sku、store_id 和 versions（版本 ID 到 revision 的映射），原子删除 SKU 列表行并清除该范围内可管理的全部版本，versions 可为空；版本集合变化时返回 409。行删除独立记录于 fba_catalog_deletions，并写入 sales.fba_sku.delete 审计。所选店铺删除仅移除该店铺列表行；管理员全部店铺删除移除所有范围，其他账号全部店铺删除移除其授权店铺范围。所有可见店铺均移除后，汇总列表也不再展示。
 - `GET /api/v1/sales-analysis/fba-fees`：按 sku、store_id 查询可见历史版本，effective_until 为同范围内自动计算的含当天截止日期，null 表示至下次调价。
 - `POST /api/v1/sales-analysis/fba-fees`：独立保存两档物流费，字段 low_price_fee、high_price_fee 均必填，revision=0 新增，编辑传当前 revision。
 - `DELETE /api/v1/sales-analysis/fba-fees/{id}`：删除指定历史版本，传当前 revision；版本被修改时拒绝删除并要求刷新。权限与维护一致，通用版本仅管理员可删除，授权店铺版本要求 `quotes.manage`。记录删除审计日志。
