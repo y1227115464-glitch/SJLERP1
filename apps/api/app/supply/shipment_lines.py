@@ -29,7 +29,7 @@ def validate_lines(db, record, purchase, items):
             own_pending = line.quantity - line.received_quantity if line else 0
             others = allocated.get(item.product_id, 0) - own_pending
             pending = item.quantity - (line.received_quantity if line else 0)
-            if not ordered or pending > ordered.quantity - ordered.received_quantity - ordered.cancelled_quantity - others:
+            if not ordered or pending > ordered.quantity - ordered.received_quantity - ordered.cancelled_quantity - ordered.transferred_quantity - others:
                 fail(409, 'purchase_overallocated', '商品不在采购单内，或修改后的数量超过采购可分配余量；请先调整采购单')
     return existing, requested, products, purchased, packing
 

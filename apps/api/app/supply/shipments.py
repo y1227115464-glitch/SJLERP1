@@ -72,7 +72,7 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
         allocated = allocations(db, purchase.id)
         for line in payload.lines:
             ordered = purchase_lines.get(line.product_id)
-            if not ordered or line.quantity > ordered.quantity - ordered.received_quantity - ordered.cancelled_quantity - allocated.get(line.product_id, 0):
+            if not ordered or line.quantity > ordered.quantity - ordered.received_quantity - ordered.cancelled_quantity - ordered.transferred_quantity - allocated.get(line.product_id, 0):
                 fail(409, 'purchase_overallocated', '商品不在采购单内，或发货数量超过尚未分配的采购余量')
     else:
         active_warehouse(db, payload.source_warehouse_id)
@@ -194,7 +194,7 @@ def receive(identifier: str, payload: ReceiptInput, db: DB, user: Writer):
         purchased = {line.product_id: line for line in purchase.lines}
         for product_id, (quantity, _) in changes.items():
             line = purchased[product_id]
-            if line.received_quantity + quantity + line.cancelled_quantity > line.quantity:
+            if line.received_quantity + quantity + line.cancelled_quantity + line.transferred_quantity > line.quantity:
                 fail(409, 'receipt_exceeds_purchase', '接收数量超过采购未收余量')
             line.received_quantity += quantity
         purchase.status = purchase_status(purchase)

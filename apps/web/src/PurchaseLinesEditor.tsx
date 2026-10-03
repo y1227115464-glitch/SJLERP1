@@ -15,7 +15,7 @@ export function PurchaseLinesEditor({ order, onClose, onSaved }: { order: Purcha
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   return <Modal open title="编辑采购商品及数量" width={900} onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText="保存修改">
-    <Alert className="page-notice" type="info" showIcon title="可调整原商品数量，也可追加商品" description="原商品及单价保留；采购数量不能低于已收货、已分配给货件和已取消数量的合计。修改不会自动发送给供应商。" />
+    <Alert className="page-notice" type="info" showIcon title="可调整原商品数量，也可追加商品" description="原商品及单价保留；采购数量不能低于已收货、已分配给货件、已取消和已转出数量的合计。修改不会自动发送给供应商。" />
     <ErrorNotice error={error} />
     <Form form={form} layout="vertical" initialValues={{ lines: order.lines.map(line => ({ product_id: line.product_id, quantity: line.quantity })) }} onFinish={async values => {
       setSaving(true); setError('');
@@ -31,7 +31,7 @@ export function PurchaseLinesEditor({ order, onClose, onSaved }: { order: Purcha
       <Form.List name="lines">{(fields, { add, remove }) => <>
         {fields.map(field => {
           const original = order.lines[field.name];
-          const minimum = original ? Math.max(1, original.received_quantity + original.cancelled_quantity + (original.allocated_quantity || 0)) : 1;
+          const minimum = original ? Math.max(1, original.received_quantity + original.cancelled_quantity + (original.transferred_quantity || 0) + (original.allocated_quantity || 0)) : 1;
           return <Row key={field.key} gutter={12} align="top">
             <Col span={12}><Form.Item name={[field.name, 'product_id']} label="商品 / SKU" rules={required}>
               <RemoteSelect path={queryPath('/products', { is_active: true, store_id: order.store_id, supplier_id: order.supplier_id })} disabled={!!original} initialLabel={original ? `${original.internal_sku} · ${original.product_name_zh || original.product_name}` : undefined} />

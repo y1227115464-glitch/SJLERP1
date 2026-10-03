@@ -13,7 +13,7 @@ from app.supply.schemas import Identifier, Quantity, ShipmentItem
 def lines_version(record):
     # Includes receipts and packing: these can change without updating the header timestamp.
     rows = [(line.id, line.product_id, line.quantity, line.received_quantity,
-             getattr(line, 'cancelled_quantity', 0), getattr(line, 'units_per_carton', None))
+             getattr(line, 'cancelled_quantity', 0), getattr(line, 'transferred_quantity', 0), getattr(line, 'units_per_carton', None))
             for line in record.lines]
     return hashlib.sha256(json.dumps([record.status, sorted(rows)]).encode()).hexdigest()
 

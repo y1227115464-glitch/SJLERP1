@@ -1,6 +1,7 @@
 export interface Warehouse { id: string; code: string; name: string; kind: 'domestic' | 'overseas' | 'fba'; address: string; is_active: boolean }
-export interface PurchaseLine { product_name_zh: string; units_per_carton: number | null; unit_weight_kg: string | null; total_weight_kg: string | null; id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number; cancelled_quantity: number; unit_price?: string; allocated_quantity?: number; unallocated_quantity?: number }
+export interface PurchaseLine { product_name_zh: string; units_per_carton: number | null; unit_weight_kg: string | null; total_weight_kg: string | null; id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number; cancelled_quantity: number; transferred_quantity: number; unit_price?: string; allocated_quantity?: number; unallocated_quantity?: number }
 export interface PurchaseOrder {
+  source_purchase_order_id: string | null; source_purchase_number: string | null; transfer_orders?: { id: string; number: string }[];
   payment_status: string; invoice_status: string; finance_notes?: string; finance_updated_at?: string | null;
   finance_history?: { id: string; payment_status: string; invoice_status: string; notes: string; actor_name: string; created_at: string }[];
   lines_version: string;

@@ -20,6 +20,8 @@ class Warehouse(Base):
 
 class PurchaseOrder(Base):
     __tablename__ = 'purchase_orders'
+    source_purchase_order_id: Mapped[str | None] = mapped_column(ForeignKey('purchase_orders.id'), nullable=True)
+    source_purchase: Mapped['PurchaseOrder | None'] = relationship(remote_side='PurchaseOrder.id')
     planned_ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     ordered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     __table_args__ = (Index('ix_purchase_store_created', 'store_id', 'created_at'), Index('ix_purchase_status_expected', 'status', 'expected_date'))
@@ -47,6 +49,7 @@ class PurchaseOrder(Base):
 class PurchaseLine(Base):
     __tablename__ = 'purchase_lines'
     __table_args__ = (UniqueConstraint('purchase_order_id', 'product_id'),
+                     CheckConstraint('transferred_quantity >= 0 AND received_quantity + cancelled_quantity + transferred_quantity <= quantity', name='ck_purchase_transfer_quantity'),
                      CheckConstraint('quantity > 0 AND received_quantity >= 0 AND cancelled_quantity >= 0 AND received_quantity + cancelled_quantity <= quantity'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     purchase_order_id: Mapped[str] = mapped_column(ForeignKey('purchase_orders.id'), index=True)
@@ -57,6 +60,7 @@ class PurchaseLine(Base):
     quantity: Mapped[int] = mapped_column(BigInteger)
     received_quantity: Mapped[int] = mapped_column(BigInteger, default=0)
     cancelled_quantity: Mapped[int] = mapped_column(BigInteger, default=0)
+    transferred_quantity: Mapped[int] = mapped_column(BigInteger, default=0, server_default='0')
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     product: Mapped[Product] = relationship(lazy='joined')
 

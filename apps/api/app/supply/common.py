@@ -81,7 +81,9 @@ def operation(db, payload, user, kind, result_id):
 
 
 def purchase_status(record):
-    if all(line.received_quantity + line.cancelled_quantity == line.quantity for line in record.lines):
+    if all(line.received_quantity + line.cancelled_quantity + line.transferred_quantity == line.quantity for line in record.lines):
+        if any(line.transferred_quantity for line in record.lines):
+            return 'closed'
         if not any(line.received_quantity for line in record.lines):
             return 'cancelled'
         return 'closed' if any(line.cancelled_quantity for line in record.lines) else 'received'
@@ -100,7 +102,9 @@ def overdue(record):
 def purchase_out(record, user):
     result = values(record, 'id number store_id supplier_id status payment_status invoice_status order_date expected_date planned_ship_date ordered_at notes created_at updated_at')
     result.update(store_name=record.store.name, supplier_name=record.supplier.name, overdue=overdue(record), lines_version=lines_version(record))
-    fields = 'id product_id product_name internal_sku quantity received_quantity cancelled_quantity'
+    result.update(source_purchase_order_id=record.source_purchase_order_id,
+                  source_purchase_number=record.source_purchase.number if record.source_purchase else None)
+    fields = 'id product_id product_name internal_sku quantity received_quantity cancelled_quantity transferred_quantity'
     costs = has_permission(user, 'costs.view')
     result['lines'] = [values(line, fields + (' unit_price' if costs else '')) for line in record.lines]
     for output, line in zip(result['lines'], record.lines):
@@ -113,7 +117,7 @@ def purchase_out(record, user):
     if costs:
         with localcontext() as context:
             context.prec = 40
-            total = sum((line.quantity * line.unit_price for line in record.lines), Decimal(0))
+            total = sum(((line.quantity - line.transferred_quantity) * line.unit_price for line in record.lines), Decimal(0))
         result.update(currency=record.currency, payment_terms=record.payment_terms, total_amount=format(total, '.4f'))
         result.update(values(record, 'finance_notes finance_updated_at'))
     return result

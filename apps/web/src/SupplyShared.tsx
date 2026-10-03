@@ -4,7 +4,7 @@ import { useResource } from './common';
 import { queryPath, useDebouncedValue } from './CatalogShared';
 import type { ListResult, Store } from './types';
 
-export const purchaseStatuses: Record<string, string> = { draft: '草稿', ordered: '待交付', partially_received: '部分到货', received: '全部到货', cancelled: '已取消', closed: '余量已取消' };
+export const purchaseStatuses: Record<string, string> = { draft: '草稿', ordered: '待交付', partially_received: '部分到货', received: '全部到货', cancelled: '已取消', closed: '已结束' };
 export const shipmentStatuses: Record<string, string> = { planned: '待发货', in_transit: '运输中', partially_received: '部分接收', received: '已收齐', cancelled: '已取消' };
 export const stageLabels: Record<string, string> = { preparing: '备货中', in_transit: '运输中', customs: '清关中', delivered: '已送达待接收', delayed: '异常 / 延误', partially_received: '部分接收', received: '已收齐', cancelled: '已取消', note: '资料更新' };
 export const warehouseKinds: Record<string, string> = { domestic: '国内仓', overseas: '海外仓', fba: 'FBA仓库' };

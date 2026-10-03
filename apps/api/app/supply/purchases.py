@@ -11,6 +11,7 @@ from app.supply.models import PurchaseLine, PurchaseOrder, Shipment, ShipmentLin
 from app.supply.schemas import PurchaseInput, PurchaseCreate, PurchaseScheduleInput
 from app.supply.line_changes import PurchaseLineChange
 from app.supply.purchase_lines import amend_purchase
+from app.supply.purchase_transfer import PurchaseTransferInput, transfer_remaining
 
 from app.product_scope import purchase_products
 from app.supply.finance import FinanceInput, PaymentStatus, InvoiceStatus, followup, history
@@ -56,7 +57,7 @@ def list_orders(db: DB, page: Page, user: Reader, store_id: str | None = None, q
             Shipment, Shipment.id == ShipmentLine.shipment_id).where(Shipment.purchase_order_id == PurchaseLine.purchase_order_id,
             ShipmentLine.product_id == PurchaseLine.product_id, Shipment.status.in_(['planned', 'in_transit', 'partially_received'])).correlate(PurchaseLine).scalar_subquery()
         available = select(PurchaseLine.id).where(PurchaseLine.purchase_order_id == PurchaseOrder.id,
-            PurchaseLine.quantity - PurchaseLine.received_quantity - PurchaseLine.cancelled_quantity > allocated).exists()
+            PurchaseLine.quantity - PurchaseLine.received_quantity - PurchaseLine.cancelled_quantity - PurchaseLine.transferred_quantity > allocated).exists()
         statement = statement.where(PurchaseOrder.status.in_(['ordered', 'partially_received']), available)
     return paginated(db, statement.order_by(PurchaseOrder.created_at.desc(), PurchaseOrder.id), page, lambda item: purchase_out(item, user))
 
@@ -65,6 +66,9 @@ def list_orders(db: DB, page: Page, user: Reader, store_id: str | None = None, q
 def detail(identifier: str, db: DB, user: Reader):
     record = scoped_record(db, PurchaseOrder, identifier, user)
     result = purchase_out(record, user)
+    result['transfer_orders'] = [{'id': item.id, 'number': item.number} for item in db.scalars(
+        select(PurchaseOrder).where(PurchaseOrder.source_purchase_order_id == identifier)
+        .order_by(PurchaseOrder.created_at, PurchaseOrder.id))]
     result['finance_history'] = history(db, identifier, user)
     from app.tasks.models import SourceEvent
     progress = db.execute(select(SourceEvent.created_at, SourceEvent.data, User.display_name).join(User, User.id == SourceEvent.actor_id)
@@ -74,7 +78,7 @@ def detail(identifier: str, db: DB, user: Reader):
     allocated = allocations(db, identifier)
     for line in result['lines']:
         line['allocated_quantity'] = allocated.get(line['product_id'], 0)
-        line['unallocated_quantity'] = line['quantity'] - line['received_quantity'] - line['cancelled_quantity'] - line['allocated_quantity']
+        line['unallocated_quantity'] = line['quantity'] - line['received_quantity'] - line['cancelled_quantity'] - line['transferred_quantity'] - line['allocated_quantity']
     return result
 
 
@@ -124,6 +128,11 @@ def edit_lines(identifier: str, payload: PurchaseLineChange, db: DB, user: Write
     return amend_purchase(identifier, payload, db, user)
 
 
+@router.post('/{identifier}/transfer', status_code=201)
+def transfer(identifier: str, payload: PurchaseTransferInput, db: DB, user: Writer):
+    return transfer_remaining(identifier, payload, db, user)
+
+
 @router.post('/{identifier}/confirm')
 def confirm(identifier: str, db: DB, user: Writer):
     record = scoped_record(db, PurchaseOrder, identifier, user, lock=True)
@@ -147,7 +156,7 @@ def cancel(identifier: str, db: DB, user: Writer):
     allocated = allocations(db, identifier)
     cancelled = 0
     for line in record.lines:
-        remaining = line.quantity - line.received_quantity - line.cancelled_quantity - allocated.get(line.product_id, 0)
+        remaining = line.quantity - line.received_quantity - line.cancelled_quantity - line.transferred_quantity - allocated.get(line.product_id, 0)
         line.cancelled_quantity += remaining
         cancelled += remaining
     if not cancelled:
