@@ -84,8 +84,8 @@ def reconcile(db, source, kind, moment, *, progress_at=None):
             allocated[line.product_id] += line.quantity
             if child.shipped_at:
                 shipped[line.product_id] += line.quantity
-    fully_shipped = kind == 'purchase' and all(shipped[line.product_id] >= line.quantity - line.cancelled_quantity - line.transferred_quantity for line in source.lines)
-    fully_allocated = kind == 'purchase' and all(allocated[line.product_id] >= line.quantity - line.cancelled_quantity - line.transferred_quantity for line in source.lines)
+    fully_shipped = kind == 'purchase' and all(shipped[line.product_id] >= line.quantity - line.cancelled_quantity - line.transferred_quantity - line.supplier_stock_quantity for line in source.lines)
+    fully_allocated = kind == 'purchase' and all(allocated[line.product_id] >= line.quantity - line.cancelled_quantity - line.transferred_quantity - line.supplier_stock_quantity for line in source.lines)
     for task in tasks:
         record = children_by_id.get(task.source_id, source)
         cancelled = record.status == 'cancelled'

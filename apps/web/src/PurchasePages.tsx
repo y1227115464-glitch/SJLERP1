@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { App as AntApp, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Progress, Row, Select, Space, Switch, Table, Timeline } from 'antd';
+import { App as AntApp, Button, Card, Col, Descriptions, Drawer, Form, Input, InputNumber, Modal, Progress, Row, Select, Space, Switch, Table, Tabs, Timeline } from 'antd';
 import { MinusCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api, errorText } from './api';
@@ -9,6 +9,7 @@ import { displayMoney, options, purchaseStatuses, QuantityInput, RemoteSelect, r
 import { PurchaseFinance, paymentStatuses, invoiceStatuses } from './PurchaseFinance';
 import { ProductQuickEditor } from './ProductQuickEditor';
 import { cartonText, totalWeight } from './packing';
+import { SupplierStockPanel, SupplierStockTransfer } from './SupplierStock';
 import { PurchaseTransferEditor } from './PurchaseTransferEditor';
 import { PurchaseLinesEditor } from './PurchaseLinesEditor';
 import { ShipmentEditor } from './ShipmentForms';
@@ -18,6 +19,8 @@ import type { Store, User } from './types';
 
 interface Props { user: User; stores: Store[]; selectedStore: string }
 export function PurchasesPage({ user, stores, selectedStore }: Props) {
+  const [tab, setTab] = useState('orders');
+  const [stockTransfer, setStockTransfer] = useState<string>();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState<string>();
   const [paymentStatus, setPaymentStatus] = useState<string>();
@@ -34,7 +37,9 @@ export function PurchasesPage({ user, stores, selectedStore }: Props) {
   const refresh = () => { resource.reload(); setVersion(value => value + 1); };
   return <>
     <PageHeading eyebrow="PURCHASE ORDERS" title="采购记录" description="从下单到分批到货，记录每张采购单的商品、数量、交期和履约情况。" extra={canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新增采购单</Button>} />
-    <ErrorNotice error={resource.error} retry={resource.reload} />
+    <Tabs activeKey={tab} onChange={setTab} items={[{ key: 'orders', label: '采购记录' }, { key: 'stock', label: '供应商库存' }]} />
+    {tab === 'stock' && <SupplierStockPanel key={selectedStore} version={version} user={user} selectedStore={selectedStore} onChanged={refresh} onPurchase={id => setDetail(id)} />}
+    {tab === 'orders' && <><ErrorNotice error={resource.error} retry={resource.reload} />
     <Card className="section-card" title="采购单" extra={<Button icon={<ReloadOutlined />} onClick={resource.reload}>刷新</Button>}>
       <div className="catalog-filter-bar"><Input className="catalog-search" prefix={<SearchOutlined />} placeholder="搜索采购单号" value={q} onChange={event => setQ(event.target.value)} allowClear /><Select placeholder="全部状态" value={status} onChange={setStatus} allowClear options={options(purchaseStatuses)} style={{ width: 170 }} /><Select placeholder="付款状态" value={paymentStatus} onChange={setPaymentStatus} allowClear options={options(paymentStatuses)} style={{ width: 150 }} /><Select placeholder="发票状态" value={invoiceStatus} onChange={setInvoiceStatus} allowClear options={options(invoiceStatuses)} style={{ width: 150 }} /></div>
       <Table<PurchaseOrder> rowKey="id" dataSource={resource.data?.items ?? []} loading={resource.loading} pagination={resource.pagination} scroll={{ x: 1100 }} locale={{ emptyText: <EmptyState text="暂无采购记录。先维护商品和供应商，再建立采购单。" /> }} columns={[
@@ -45,17 +50,18 @@ export function PurchasesPage({ user, stores, selectedStore }: Props) {
         ...(user.permissions.includes('costs.view') ? [{ title: '采购金额', width: 170, render: (_: unknown, item: PurchaseOrder) => displayMoney(item.total_amount, item.currency) }] : []),
         { title: '到货进度', width: 170, render: (_, item) => { const received = item.lines.reduce((sum, line) => sum + line.received_quantity, 0); const quantity = item.lines.reduce((sum, line) => sum + line.quantity - (line.transferred_quantity || 0), 0); return <><Progress percent={quantity ? Math.round(received / quantity * 100) : 0} size="small" /><small>{received} / {quantity} 件</small></>; } },
         { title: '状态', width: 170, render: (_, item) => <StatusTag status={item.status} labels={purchaseStatuses} overdue={item.overdue} /> },
-        { title: '操作', width: 220, render: (_, item) => <Space direction="vertical" size={0}><Button type="link" onClick={() => setDetail(item.id)}>详情</Button>{canManage && ['ordered', 'partially_received'].includes(item.status) && <Button type="link" onClick={() => setTransferring(item.id)}>剩余商品转入新采购单</Button>}</Space> },
+        { title: '操作', width: 220, render: (_, item) => <Space direction="vertical" size={0}><Button type="link" onClick={() => setDetail(item.id)}>详情</Button>{canManage && ['ordered', 'partially_received'].includes(item.status) && <Button type="link" onClick={() => setStockTransfer(item.id)}>转入供应商库存</Button>}{canManage && ['ordered', 'partially_received'].includes(item.status) && <Button type="link" onClick={() => setTransferring(item.id)}>剩余商品转入新采购单</Button>}</Space> },
       ]} />
-    </Card>
-    {detail && <PurchaseDetails key={`${detail}:${version}`} id={detail} user={user} onClose={() => setDetail(null)} onEdit={setEditing} onPlan={setPlanning} onTransfer={setTransferring} onChanged={refresh} />}
+    </Card></>}
+    {stockTransfer && <SupplierStockTransfer id={stockTransfer} onClose={() => setStockTransfer(undefined)} onSaved={() => { setStockTransfer(undefined); refresh(); message.success("已转入供应商库存"); }} />}
+    {detail && <PurchaseDetails key={`${detail}:${version}`} id={detail} user={user} onClose={() => setDetail(null)} onEdit={setEditing} onPlan={setPlanning} onTransfer={setTransferring} onStock={setStockTransfer} onChanged={refresh} />}
     {editing !== undefined && <PurchaseEditor user={user} order={editing} stores={stores} selectedStore={selectedStore} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); refresh(); }} />}
     {transferring && <PurchaseTransferEditor id={transferring} onClose={() => setTransferring(undefined)} onSaved={created => { setTransferring(undefined); refresh(); setDetail(created.id); message.success(`已转入新采购单 ${created.number}`); }} />}
     {planning && <ShipmentEditor user={user} stores={stores} selectedStore={selectedStore} purchase={planning} onClose={() => setPlanning(null)} onSaved={() => { setPlanning(null); refresh(); }} />}
   </>;
 }
 
-function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onTransfer, onChanged }: { id: string; user: User; onClose: () => void; onEdit: (order: PurchaseOrder) => void; onPlan: (order: PurchaseOrder) => void; onTransfer: (id: string) => void; onChanged: () => void }) {
+function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onTransfer, onStock, onChanged }: { id: string; user: User; onClose: () => void; onEdit: (order: PurchaseOrder) => void; onPlan: (order: PurchaseOrder) => void; onTransfer: (id: string) => void; onStock: (id: string) => void; onChanged: () => void }) {
   const resource = useResource<PurchaseOrder>(`/purchase-orders/${id}`);
   const order = resource.data;
   const { modal, message } = AntApp.useApp();
@@ -73,6 +79,7 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onTransfer, onChan
         {user.permissions.includes('purchases.manage') && order.status === 'draft' && <><Button onClick={() => onEdit(order)}>编辑草稿</Button><Button type="primary" onClick={() => perform('confirm')}>登记已下单</Button></>}
         {user.permissions.includes('purchases.manage') && ['ordered', 'partially_received', 'received'].includes(order.status) && <Button onClick={() => setEditingLines(true)}>编辑商品及数量</Button>}
         {user.permissions.includes('purchases.manage') && ['ordered', 'partially_received'].includes(order.status) && <Button disabled={!order.lines.some(line => (line.unallocated_quantity ?? 0) > 0)} onClick={() => onTransfer(order.id)}>剩余商品转入新采购单</Button>}
+        {user.permissions.includes('purchases.manage') && ['ordered', 'partially_received'].includes(order.status) && <Button disabled={!order.lines.some(line => (line.unallocated_quantity ?? 0) > 0)} onClick={() => onStock(order.id)}>转入供应商库存</Button>}
         {user.permissions.includes('shipments.manage') && ['ordered', 'partially_received'].includes(order.status) && <Button type="primary" onClick={() => onPlan(order)}>安排供应商发货</Button>}
         {user.permissions.includes('purchases.manage') && !['received', 'closed', 'cancelled'].includes(order.status) && <Button danger onClick={() => perform('cancel')}>取消未分配余量</Button>}
       </Space></div>
@@ -88,6 +95,7 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onTransfer, onChan
       ]} />
       <PurchaseFinance order={order} user={user} onSaved={onChanged} />
       <h3 className="catalog-section-title">商品及交付情况</h3>
+      {order.lines.some(line => line.supplier_stock_quantity > 0) && <p className="catalog-field-help">供应商库存仍计入本单采购金额，暂不参与发货。需要发货时，在「供应商库存」中转回采购待发货。</p>}
       {order.lines.some(line => line.transferred_quantity > 0) && <p className="catalog-field-help">采购量、箱数与重量保留原单记录；已转出部分由新采购单继续跟进，本单采购金额、到货进度及可安排发货数量已扣除转出部分。</p>}
       <Table rowKey="id" dataSource={order.lines} pagination={false} scroll={{ x: 1150 }} columns={[
         { title: 'SKU / 中文商品名', render: (_, line) => <>{line.internal_sku}<small className="cell-secondary">{line.product_name_zh || line.product_name}</small>{user.permissions.includes('products.manage') && <Button type="link" size="small" onClick={() => setProductId(line.product_id)}>编辑商品信息</Button>}</> },
@@ -95,7 +103,7 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onTransfer, onChan
         { title: '总重量（kg）', render: (_, line) => <>{line.total_weight_kg ?? '未维护'}<small className="cell-secondary">{line.unit_weight_kg ? `${line.unit_weight_kg} kg/件` : '单重未维护'}</small></> },
         { title: '采购量', dataIndex: 'quantity' }, ...(order.total_amount !== undefined ? [{ title: '单价', dataIndex: 'unit_price' }] : []),
         { title: '已到货', dataIndex: 'received_quantity' }, { title: '待发 / 在途', dataIndex: 'allocated_quantity' },
-        { title: '可安排发货', dataIndex: 'unallocated_quantity' }, { title: '已取消', dataIndex: 'cancelled_quantity' }, { title: '已转出', dataIndex: 'transferred_quantity' },
+        { title: '可安排发货', dataIndex: 'unallocated_quantity' }, { title: '已取消', dataIndex: 'cancelled_quantity' }, { title: '已转出', dataIndex: 'transferred_quantity' }, { title: '供应商库存', dataIndex: 'supplier_stock_quantity' },
       ]} />
       {!!order.production_history?.length && <><h3 className="catalog-section-title">生产确认记录（最近 50 条）</h3><Timeline items={order.production_history.map((entry, index) => ({ key: index, content: <><p className="catalog-prewrap">{entry.notes}</p><small>{entry.actor_name} · {dateTime(entry.created_at)}</small></> }))} /></>}
       {editingLines && <PurchaseLinesEditor order={order} onClose={() => setEditingLines(false)} onSaved={onChanged} />}

@@ -85,6 +85,7 @@ export const actionLabels: Record<string, string> = {
   'products.import_confirm': '确认商品导入', 'suppliers.create': '新增供应商', 'suppliers.update': '更新供应商',
   'quotes.create': '新增采购报价', 'quotes.update': '更新采购报价',
   'purchases.lines.update': '修改采购商品及数量', 'shipments.lines.update': '修改发货产品及数量（不建议操作）',
+  'supplier_stock.transfer': '转入供应商库存', 'supplier_stock.release': '供应商库存转回采购', 'supplier_stock.payment': '更新库存付款情况',
   'purchases.transfer': '剩余商品转入新采购单',
   'purchases.create': '新增采购单', 'purchases.update': '修改采购草稿', 'purchases.confirm': '提交采购单', 'purchases.cancel': '取消采购余量',
   'shipments.create': '建立发货计划', 'shipments.update': '维护物流资料', 'shipments.dispatch': '确认发货', 'shipments.cancel': '取消发货计划', 'shipments.event': '跟进物流进度', 'shipments.receive': '登记接收入库',

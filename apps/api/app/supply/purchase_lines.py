@@ -27,9 +27,9 @@ def amend_purchase(identifier, payload, db, user):
     for position, item in enumerate(payload.lines):
         line = existing.get(item.product_id)
         if line:
-            minimum = line.received_quantity + line.cancelled_quantity + line.transferred_quantity + allocated.get(item.product_id, 0)
+            minimum = line.received_quantity + line.cancelled_quantity + line.transferred_quantity + line.supplier_stock_quantity + allocated.get(item.product_id, 0)
             if item.quantity < minimum:
-                fail(409, 'purchase_quantity_committed', f'{line.internal_sku} 数量不能少于已收货、已取消、已转出及已分配的合计 {minimum} 件')
+                fail(409, 'purchase_quantity_committed', f'{line.internal_sku} 数量不能少于已收货、已取消、已转出、供应商库存及已分配的合计 {minimum} 件')
             if item.unit_price is not None and item.unit_price != line.unit_price:
                 fail(422, 'purchase_price_locked', '原商品单价保持不变，新增商品须填写单价')
             if line.quantity != item.quantity:
@@ -41,7 +41,7 @@ def amend_purchase(identifier, payload, db, user):
             product = products[item.product_id]
             record.lines.append(PurchaseLine(product_id=product.id, product_name=product.name,
                 internal_sku=product.internal_sku, position=position, quantity=item.quantity,
-                unit_price=item.unit_price, received_quantity=0, cancelled_quantity=0, transferred_quantity=0))
+                unit_price=item.unit_price, received_quantity=0, cancelled_quantity=0, transferred_quantity=0, supplier_stock_quantity=0))
             notes.append(f'新增 {product.internal_sku}：{item.quantity} 件')
     record.status = purchase_status(record)
     record.updated_at = now()

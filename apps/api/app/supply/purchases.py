@@ -57,7 +57,7 @@ def list_orders(db: DB, page: Page, user: Reader, store_id: str | None = None, q
             Shipment, Shipment.id == ShipmentLine.shipment_id).where(Shipment.purchase_order_id == PurchaseLine.purchase_order_id,
             ShipmentLine.product_id == PurchaseLine.product_id, Shipment.status.in_(['planned', 'in_transit', 'partially_received'])).correlate(PurchaseLine).scalar_subquery()
         available = select(PurchaseLine.id).where(PurchaseLine.purchase_order_id == PurchaseOrder.id,
-            PurchaseLine.quantity - PurchaseLine.received_quantity - PurchaseLine.cancelled_quantity - PurchaseLine.transferred_quantity > allocated).exists()
+            PurchaseLine.quantity - PurchaseLine.received_quantity - PurchaseLine.cancelled_quantity - PurchaseLine.transferred_quantity - PurchaseLine.supplier_stock_quantity > allocated).exists()
         statement = statement.where(PurchaseOrder.status.in_(['ordered', 'partially_received']), available)
     return paginated(db, statement.order_by(PurchaseOrder.created_at.desc(), PurchaseOrder.id), page, lambda item: purchase_out(item, user))
 
@@ -78,7 +78,7 @@ def detail(identifier: str, db: DB, user: Reader):
     allocated = allocations(db, identifier)
     for line in result['lines']:
         line['allocated_quantity'] = allocated.get(line['product_id'], 0)
-        line['unallocated_quantity'] = line['quantity'] - line['received_quantity'] - line['cancelled_quantity'] - line['transferred_quantity'] - line['allocated_quantity']
+        line['unallocated_quantity'] = line['quantity'] - line['received_quantity'] - line['cancelled_quantity'] - line['transferred_quantity'] - line['supplier_stock_quantity'] - line['allocated_quantity']
     return result
 
 
@@ -156,7 +156,7 @@ def cancel(identifier: str, db: DB, user: Writer):
     allocated = allocations(db, identifier)
     cancelled = 0
     for line in record.lines:
-        remaining = line.quantity - line.received_quantity - line.cancelled_quantity - line.transferred_quantity - allocated.get(line.product_id, 0)
+        remaining = line.quantity - line.received_quantity - line.cancelled_quantity - line.transferred_quantity - line.supplier_stock_quantity - allocated.get(line.product_id, 0)
         line.cancelled_quantity += remaining
         cancelled += remaining
     if not cancelled:

@@ -31,7 +31,7 @@ export function PurchaseLinesEditor({ order, onClose, onSaved }: { order: Purcha
       <Form.List name="lines">{(fields, { add, remove }) => <>
         {fields.map(field => {
           const original = order.lines[field.name];
-          const minimum = original ? Math.max(1, original.received_quantity + original.cancelled_quantity + (original.transferred_quantity || 0) + (original.allocated_quantity || 0)) : 1;
+          const minimum = original ? Math.max(1, original.received_quantity + original.cancelled_quantity + (original.transferred_quantity || 0) + (original.supplier_stock_quantity || 0) + (original.allocated_quantity || 0)) : 1;
           return <Row key={field.key} gutter={12} align="top">
             <Col span={12}><Form.Item name={[field.name, 'product_id']} label="商品 / SKU" rules={required}>
               <RemoteSelect path={queryPath('/products', { is_active: true, store_id: order.store_id, supplier_id: order.supplier_id })} disabled={!!original} initialLabel={original ? `${original.internal_sku} · ${original.product_name_zh || original.product_name}` : undefined} />

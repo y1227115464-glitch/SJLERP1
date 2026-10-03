@@ -52,13 +52,13 @@ def transfer_remaining(identifier, payload, db, user):
     for position, item in enumerate(payload.lines):
         line = original.get(item.product_id)
         remaining = (line.quantity - line.received_quantity - line.cancelled_quantity
-                     - line.transferred_quantity - allocated.get(item.product_id, 0)) if line else 0
+                     - line.transferred_quantity - line.supplier_stock_quantity - allocated.get(item.product_id, 0)) if line else 0
         if item.quantity > remaining:
             fail(409, 'purchase_transfer_exceeds_remaining', '商品不在原采购单可转余量内，或转出数量超过最新余量，请刷新后重试')
         line.transferred_quantity += item.quantity
         target.lines.append(PurchaseLine(product_id=line.product_id, product_name=line.product_name,
             internal_sku=line.internal_sku, position=position, quantity=item.quantity, unit_price=line.unit_price,
-            received_quantity=0, cancelled_quantity=0, transferred_quantity=0))
+            received_quantity=0, cancelled_quantity=0, transferred_quantity=0, supplier_stock_quantity=0))
         changes.append({'product_id': line.product_id, 'internal_sku': line.internal_sku, 'quantity': item.quantity})
     source.status, source.updated_at = purchase_status(source), now()
     db.add(target)

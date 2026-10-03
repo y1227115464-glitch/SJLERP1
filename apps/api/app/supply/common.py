@@ -81,8 +81,8 @@ def operation(db, payload, user, kind, result_id):
 
 
 def purchase_status(record):
-    if all(line.received_quantity + line.cancelled_quantity + line.transferred_quantity == line.quantity for line in record.lines):
-        if any(line.transferred_quantity for line in record.lines):
+    if all(line.received_quantity + line.cancelled_quantity + line.transferred_quantity + line.supplier_stock_quantity == line.quantity for line in record.lines):
+        if any(line.transferred_quantity or line.supplier_stock_quantity for line in record.lines):
             return 'closed'
         if not any(line.received_quantity for line in record.lines):
             return 'cancelled'
@@ -104,7 +104,7 @@ def purchase_out(record, user):
     result.update(store_name=record.store.name, supplier_name=record.supplier.name, overdue=overdue(record), lines_version=lines_version(record))
     result.update(source_purchase_order_id=record.source_purchase_order_id,
                   source_purchase_number=record.source_purchase.number if record.source_purchase else None)
-    fields = 'id product_id product_name internal_sku quantity received_quantity cancelled_quantity transferred_quantity'
+    fields = 'id product_id product_name internal_sku quantity received_quantity cancelled_quantity transferred_quantity supplier_stock_quantity'
     costs = has_permission(user, 'costs.view')
     result['lines'] = [values(line, fields + (' unit_price' if costs else '')) for line in record.lines]
     for output, line in zip(result['lines'], record.lines):

@@ -102,6 +102,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from app.product_scope import router as product_scope_router
     app.include_router(product_scope_router)
     app.include_router(inventory_router)
+    from app.supply.supplier_stock import router as supplier_stock_router
+    app.include_router(supplier_stock_router)
     app.include_router(purchase_router)
     app.include_router(shipment_router)
     app.include_router(reports_router)

@@ -49,6 +49,7 @@ class PurchaseOrder(Base):
 class PurchaseLine(Base):
     __tablename__ = 'purchase_lines'
     __table_args__ = (UniqueConstraint('purchase_order_id', 'product_id'),
+                     CheckConstraint('supplier_stock_quantity >= 0 AND received_quantity + cancelled_quantity + transferred_quantity + supplier_stock_quantity <= quantity', name='ck_purchase_supplier_stock'),
                      CheckConstraint('transferred_quantity >= 0 AND received_quantity + cancelled_quantity + transferred_quantity <= quantity', name='ck_purchase_transfer_quantity'),
                      CheckConstraint('quantity > 0 AND received_quantity >= 0 AND cancelled_quantity >= 0 AND received_quantity + cancelled_quantity <= quantity'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -61,6 +62,7 @@ class PurchaseLine(Base):
     received_quantity: Mapped[int] = mapped_column(BigInteger, default=0)
     cancelled_quantity: Mapped[int] = mapped_column(BigInteger, default=0)
     transferred_quantity: Mapped[int] = mapped_column(BigInteger, default=0, server_default='0')
+    supplier_stock_quantity: Mapped[int] = mapped_column(BigInteger, default=0, server_default='0')
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     product: Mapped[Product] = relationship(lazy='joined')
 
