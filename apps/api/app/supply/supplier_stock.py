@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.api import DB, Page, audit, fail, paginated, require
 from app.core.security import has_permission
-from app.models import Base, Supplier, User, new_id, now
+from app.models import Base, Product, Supplier, User, new_id, now
 from app.supply.common import active_store, allocations, operation, purchase_out, purchase_status, scoped, scoped_record, values
 from app.supply.line_changes import LineChange, check_version
 from app.supply.models import PurchaseLine, PurchaseOrder
@@ -132,16 +132,39 @@ def stock_query(user, store_id, supplier_id, q, include_empty):
     if q.strip():
         term = '%' + q.strip() + '%'
         statement = statement.join(PurchaseOrder, SupplierStock.purchase_order_id == PurchaseOrder.id).join(
-            PurchaseLine, SupplierStock.purchase_line_id == PurchaseLine.id).join(Supplier, SupplierStock.supplier_id == Supplier.id).where(
-            PurchaseOrder.number.ilike(term) | PurchaseLine.internal_sku.ilike(term) | PurchaseLine.product_name.ilike(term) | Supplier.name.ilike(term))
+            PurchaseLine, SupplierStock.purchase_line_id == PurchaseLine.id).join(Supplier, SupplierStock.supplier_id == Supplier.id).join(
+            Product, PurchaseLine.product_id == Product.id).where(
+            PurchaseOrder.number.ilike(term) | Product.internal_sku.ilike(term) | PurchaseLine.product_name.ilike(term)
+            | Product.name_zh.ilike(term) | Product.name.ilike(term) | Supplier.name.ilike(term))
     return statement
 
 
 @router.get('/supplier-stock')
 def stock_list(db: DB, page: Page, user: Reader, store_id: str | None = None,
-               supplier_id: str | None = None, q: str = '', include_empty: bool = False):
+               supplier_id: str | None = None, q: str = '', include_empty: bool = False, product_id: str | None = None):
     statement = stock_query(user, store_id, supplier_id, q, include_empty)
+    if product_id:
+        statement = statement.where(SupplierStock.purchase_line_id.in_(
+            select(PurchaseLine.id).where(PurchaseLine.product_id == product_id)))
     return paginated(db, statement.order_by(SupplierStock.created_at.desc(), SupplierStock.id), page, lambda row: stock_out(row, user))
+
+
+@router.get('/supplier-stock/skus')
+def sku_list(db: DB, page: Page, user: Reader, store_id: str | None = None,
+             supplier_id: str | None = None, q: str = ''):
+    # Aggregate all accessible matching batches before pagination, excluding empty lots.
+    batches = stock_query(user, store_id, supplier_id, q, False).with_only_columns(
+        SupplierStock.purchase_line_id, SupplierStock.supplier_id, SupplierStock.remaining_quantity).subquery()
+    grouped = select(PurchaseLine.product_id.label('id'),
+        func.sum(batches.c.remaining_quantity).label('quantity'),
+        func.count().label('batches'), func.count(func.distinct(batches.c.supplier_id)).label('suppliers')).join(
+        batches, batches.c.purchase_line_id == PurchaseLine.id).group_by(PurchaseLine.product_id).subquery()
+    statement = select(Product.internal_sku, Product.name, Product.name_zh,
+        grouped.c.id, grouped.c.quantity, grouped.c.batches, grouped.c.suppliers).join(grouped, Product.id == grouped.c.id)
+    total = db.scalar(select(func.count()).select_from(grouped))
+    rows = db.execute(statement.order_by(Product.internal_sku, grouped.c.id).limit(page.limit).offset(page.offset))
+    return {'items': [dict(id=row.id, internal_sku=row.internal_sku, product_name=row.name_zh or row.name,
+                          quantity=int(row.quantity), batches=row.batches, suppliers=row.suppliers) for row in rows], 'total': total}
 
 
 @router.get('/supplier-stock/summary')

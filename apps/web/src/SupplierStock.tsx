@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Checkbox, Drawer, Form, Input, Modal, Select, Space, Table } from 'antd';
+import { Alert, Button, Card, Checkbox, Drawer, Form, Input, Modal, Select, Space, Table, Tabs } from 'antd';
 import { api, errorText } from './api';
 import { dateTime, EmptyState, ErrorNotice, usePagedList, useResource } from './common';
 import { queryPath, useDebouncedValue } from './CatalogShared';
@@ -16,30 +16,47 @@ interface Stock {
   unit_price?: string; currency?: string;
 }
 interface Summary { id: string; supplier_name: string; quantity: number; batches: number }
+interface SkuStock { id: string; internal_sku: string; product_name: string; quantity: number; batches: number; suppliers: number }
 interface Event { id: string; kind: string; quantity: number; balance_after: number; reason: string; payment_status: string; actor_name: string; created_at: string }
 
 export function SupplierStockPanel({ user, selectedStore, version, onChanged, onPurchase }: { user: User; selectedStore: string; version: number; onChanged: () => void; onPurchase: (id: string) => void }) {
   const [supplier, setSupplier] = useState<Summary>();
+  const [view, setView] = useState('skus');
   const [q, setQ] = useState('');
   const [includeEmpty, setIncludeEmpty] = useState(false);
+  const [selectedSku, setSelectedSku] = useState<SkuStock>();
   const [action, setAction] = useState<{ stock: Stock; kind: 'release' | 'payment' }>();
   const [history, setHistory] = useState<Stock>();
   const query = useDebouncedValue(q);
   const summary = usePagedList<Summary>(queryPath('/supplier-stock/summary', { store_id: storeParam(selectedStore) }));
-  const resource = usePagedList<Stock>(queryPath('/supplier-stock', { store_id: storeParam(selectedStore), supplier_id: supplier?.id, q: query, include_empty: includeEmpty }));
-  useEffect(() => { summary.reload(); resource.reload(); }, [version, summary.reload, resource.reload]);
+  const skus = usePagedList<SkuStock>(queryPath('/supplier-stock/skus', { store_id: storeParam(selectedStore), supplier_id: supplier?.id, q: query }));
+  const resource = usePagedList<Stock>(queryPath('/supplier-stock', { store_id: storeParam(selectedStore), supplier_id: supplier?.id, q: query, include_empty: includeEmpty, product_id: selectedSku?.id }));
+  useEffect(() => { summary.reload(); skus.reload(); resource.reload(); }, [version, summary.reload, skus.reload, resource.reload]);
   const refresh = onChanged;
   return <>
     <Alert className="page-notice" type="info" showIcon title="供应商代存库存" description="从采购单将未分配发货的余量转入，按供应商、店铺和采购批次管理。原采购金额和付款记录保留；需要发货时先分批转回原采购单，再安排供应商发货。" />
-    <ErrorNotice error={summary.error || resource.error} retry={() => { summary.reload(); resource.reload(); }} />
+    <ErrorNotice error={summary.error || skus.error || resource.error} retry={() => { summary.reload(); skus.reload(); resource.reload(); }} />
     <Card title="各供应商现存库存" className="section-card" extra={<Button onClick={refresh}>刷新库存</Button>}>
       <Table<Summary> rowKey="id" loading={summary.loading} dataSource={summary.data?.items ?? []} pagination={summary.pagination} size="small" columns={[
         { title: '供应商', dataIndex: 'supplier_name' }, { title: '现存数量（件）', dataIndex: 'quantity' }, { title: '有库存批次', dataIndex: 'batches' },
-        { title: '操作', render: (_, row) => <Button type="link" onClick={() => setSupplier(row)}>查看库存明细</Button> },
+        { title: '操作', render: (_, row) => <Button type="link" onClick={() => { setSupplier(row); setSelectedSku(undefined); }}>查看库存明细</Button> },
       ]} locale={{ emptyText: <EmptyState text="暂无供应商库存。请在采购单中选择「转入供应商库存」。" /> }} />
     </Card>
-    <Card title={supplier ? `${supplier.supplier_name} · 库存批次` : '全部供应商 · 库存批次'} className="section-card">
-      <Space wrap style={{ marginBottom: 16 }}><Input allowClear placeholder="搜索供应商、SKU、商品或采购单号" value={q} onChange={event => setQ(event.target.value)} style={{ width: 340 }} /><Checkbox checked={includeEmpty} onChange={event => setIncludeEmpty(event.target.checked)}>包含已转完批次</Checkbox>{supplier && <Button onClick={() => setSupplier(undefined)}>全部供应商</Button>}</Space>
+    <Space wrap style={{ marginBlock: 16 }}><Input allowClear placeholder="搜索供应商、SKU、商品或采购单号" value={q} onChange={event => { setQ(event.target.value); setSelectedSku(undefined); }} style={{ width: 340 }} />{supplier && <Button onClick={() => { setSupplier(undefined); setSelectedSku(undefined); }}>全部供应商</Button>}</Space>
+    <Card title={supplier?.supplier_name || '全部供应商'} className="section-card">
+      <Tabs activeKey={view} onChange={setView} items={[{ key: 'skus', label: 'SKU 库存' }, { key: 'batches', label: '库存批次' }]} />
+      {view === 'skus' && <>
+      <p className="catalog-field-help">按当前店铺、供应商和搜索条件，将同一 SKU 的现存数量合并汇总；已转完的批次不计入。点击「查看批次」可切换到对应的库存批次。</p>
+      <Table<SkuStock> rowKey="id" dataSource={skus.data?.items ?? []} loading={skus.loading} pagination={skus.pagination} scroll={{ x: 760 }} locale={{ emptyText: <EmptyState text="当前条件下暂无 SKU 库存。" /> }} columns={[
+        { title: 'SKU / 商品', width: 280, render: (_, row) => <>{row.internal_sku}<small className="cell-secondary">{row.product_name}</small></> },
+        { title: '现存数量（件）', dataIndex: 'quantity', width: 150 },
+        { title: '供应商数', dataIndex: 'suppliers', width: 100 },
+        { title: '有库存批次', dataIndex: 'batches', width: 120 },
+        { title: '操作', width: 110, render: (_, row) => <Button type="link" onClick={() => { setSelectedSku(row); setView('batches'); }}>查看批次</Button> },
+      ]} />
+      </>}
+      {view === 'batches' && <>
+      <Space wrap style={{ marginBottom: 16 }}><Checkbox checked={includeEmpty} onChange={event => setIncludeEmpty(event.target.checked)}>包含已转完批次</Checkbox>{selectedSku && <><span>当前 SKU：{selectedSku.internal_sku}</span><Button onClick={() => setSelectedSku(undefined)}>全部 SKU 批次</Button></>}</Space>
       <Table<Stock> rowKey="id" dataSource={resource.data?.items ?? []} loading={resource.loading} pagination={resource.pagination} scroll={{ x: 1250 }} columns={[
         { title: '供应商 / 店铺', width: 180, render: (_, row) => <>{row.supplier_name}<small className="cell-secondary">{row.store_name}</small></> },
         { title: '商品 / SKU', width: 200, render: (_, row) => <>{row.internal_sku}<small className="cell-secondary">{row.product_name}</small></> },
@@ -53,6 +70,7 @@ export function SupplierStockPanel({ user, selectedStore, version, onChanged, on
           <Button type="link" onClick={() => setHistory(row)}>库存流水</Button>
         </Space> },
       ]} />
+      </>}
     </Card>
     {action && <StockAction stock={action.stock} kind={action.kind} onClose={() => setAction(undefined)} onSaved={() => { setAction(undefined); refresh(); }} />}
     {history && <StockHistory stock={history} onClose={() => setHistory(undefined)} />}
