@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.core.security import aware, can_access_store, has_permission
 from app.models import now
-from app.supply.models import PurchaseOrder, Shipment
+from app.supply.models import PurchaseOrder, Shipment, shipment_purchases
 from app.tasks.common import history, insert_tasks, source_allowed, task_row, update_status
 from app.tasks.dates import next_weekday, set_schedule, source_date
 from app.tasks.models import SourceEvent, Task, TaskRule
@@ -19,18 +19,24 @@ def lock_source(db, kind, identifier):
     Refresh after acquiring the lock; another worker may have reconciled a newer event
     while this transaction was waiting. Child shipment edits also lock their purchase.
     """
-    parent_id = db.scalar(select(Shipment.purchase_order_id).where(Shipment.id == identifier)) if kind == 'shipment' else identifier
-    if parent_id:
-        db.scalar(select(PurchaseOrder).where(PurchaseOrder.id == parent_id)
-                  .with_for_update(of=PurchaseOrder).execution_options(populate_existing=True))
+    parent_ids = (db.scalars(select(shipment_purchases.c.purchase_order_id)
+                             .where(shipment_purchases.c.shipment_id == identifier)).all()
+                  if kind == 'shipment' else [identifier])
+    if parent_ids:
+        list(db.scalars(select(PurchaseOrder).where(PurchaseOrder.id.in_(parent_ids)).order_by(PurchaseOrder.id)
+                       .with_for_update(of=PurchaseOrder).execution_options(populate_existing=True)))
     model = PurchaseOrder if kind == 'purchase' else Shipment
-    return db.scalar(select(model).where(model.id == identifier).with_for_update(of=model)
-                     .execution_options(populate_existing=True))
+    record = db.scalar(select(model).where(model.id == identifier).with_for_update(of=model)
+                       .execution_options(populate_existing=True))
+    if kind == 'shipment' and record and {order.id for order in record.purchases} != set(parent_ids):
+        raise RuntimeError('Shipment sources changed during lock acquisition; retry event')
+    return record
 
 
 def ship_date(db, source, kind):
-    if kind == 'shipment' and not source.planned_ship_date and source.purchase_order_id:
-        return db.get(PurchaseOrder, source.purchase_order_id).planned_ship_date
+    if kind == 'shipment' and not source.planned_ship_date and source.purchases:
+        dates = [order.planned_ship_date for order in source.purchases if order.planned_ship_date]
+        return min(dates) if dates else None
     return source.planned_ship_date
 
 
@@ -65,10 +71,11 @@ def materialize(db, source, kind, rules, origin, moment):
 
 def reconcile(db, source, kind, moment, *, progress_at=None):
     """Reconcile one aggregate; all child quantities/tasks are fetched in batches."""
-    if kind == 'shipment' and source.purchase_order_id:
-        parent = db.get(PurchaseOrder, source.purchase_order_id)
-        return reconcile(db, parent, 'purchase', moment)
-    children = db.scalars(select(Shipment).where(Shipment.purchase_order_id == source.id)).all() if kind == 'purchase' else []
+    if kind == 'shipment' and source.purchases:
+        for parent in source.purchases:
+            reconcile(db, parent, 'purchase', moment)
+        return
+    children = db.scalars(select(Shipment).where(Shipment.purchases.any(PurchaseOrder.id == source.id))).all() if kind == 'purchase' else []
     ids = [source.id] + [child.id for child in children]
     tasks = db.scalars(select(Task).where(Task.source_id.in_(ids), Task.status == 'pending')
                        .order_by(Task.id).with_for_update(of=Task)).all()
@@ -77,10 +84,13 @@ def reconcile(db, source, kind, moment, *, progress_at=None):
         by_source[task.source_id].append(task)
     children_by_id = {child.id: child for child in children}
     shipped, allocated = defaultdict(int), defaultdict(int)
+    own_lines = {line.id for line in source.lines} if kind == 'purchase' else set()
     for child in children:
         if child.status == 'cancelled':
             continue
         for line in child.lines:
+            if line.purchase_line_id not in own_lines:
+                continue
             allocated[line.product_id] += line.quantity
             if child.shipped_at:
                 shipped[line.product_id] += line.quantity
@@ -108,7 +118,7 @@ def reconcile(db, source, kind, moment, *, progress_at=None):
             task.suppressed = bool(covered)
             task.version += 1
             history(db, task, 'coverage', data={'covered_by_shipments': task.suppressed})
-        planned = record.planned_ship_date or (source.planned_ship_date if isinstance(record, Shipment) else None)
+        planned = ship_date(db, record, 'shipment' if isinstance(record, Shipment) else 'purchase')
         target = source_date(planned, task.offset_days)
         if task.action_kind in {'production', 'dispatch'} and task.source_ship_date != planned:
             task.source_ship_date = planned
@@ -155,7 +165,7 @@ def apply_event(db, event, moment):
         if isinstance(source, Shipment) and source.purchase_order_id:
             # Carry the parent's enabled dispatch rules into each batch, even if a colleague creates the shipment.
             inherited = db.scalars(select(TaskRule).where(TaskRule.enabled.is_(True), TaskRule.id.in_(
-                select(Task.rule_id).where(Task.source_kind == 'purchase', Task.source_id == source.purchase_order_id,
+                select(Task.rule_id).where(Task.source_kind == 'purchase', Task.source_id.in_([order.id for order in source.purchases]),
                                            Task.action_kind == 'dispatch', Task.status == 'pending')))).all()
             materialize(db, source, 'shipment', inherited, aware(event.created_at), moment)
     reconcile(db, source, event.source_kind, moment, progress_at=aware(event.created_at) if event.kind == 'production' else None)

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Table, text, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base, Product, Store, Supplier, new_id, now
@@ -67,6 +67,13 @@ class PurchaseLine(Base):
     product: Mapped[Product] = relationship(lazy='joined')
 
 
+shipment_purchases = Table(
+    'shipment_purchases', Base.metadata,
+    Column('shipment_id', ForeignKey('shipments.id'), primary_key=True),
+    Column('purchase_order_id', ForeignKey('purchase_orders.id'), primary_key=True, index=True),
+)
+
+
 class Shipment(Base):
     __tablename__ = 'shipments'
     merged_into_id: Mapped[str | None] = mapped_column(ForeignKey('shipments.id'), nullable=True)
@@ -77,6 +84,8 @@ class Shipment(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     number: Mapped[str] = mapped_column(String(50), unique=True)
     store_id: Mapped[str] = mapped_column(ForeignKey('stores.id'))
+    # Keep one parent for legacy clients and the supplier/warehouse source constraint.
+    # The complete parent set is stored in shipment_purchases.
     purchase_order_id: Mapped[str | None] = mapped_column(ForeignKey('purchase_orders.id'), nullable=True, index=True)
     source_warehouse_id: Mapped[str | None] = mapped_column(ForeignKey('warehouses.id'), nullable=True, index=True)
     destination_warehouse_id: Mapped[str] = mapped_column(ForeignKey('warehouses.id'), index=True)
@@ -92,6 +101,7 @@ class Shipment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     store: Mapped[Store] = relationship(lazy='joined')
+    purchases: Mapped[list[PurchaseOrder]] = relationship(secondary=shipment_purchases, lazy='selectin', order_by=PurchaseOrder.id)
     source: Mapped[Warehouse | None] = relationship(foreign_keys=[source_warehouse_id], lazy='joined')
     destination: Mapped[Warehouse] = relationship(foreign_keys=[destination_warehouse_id], lazy='joined')
     lines: Mapped[list['ShipmentLine']] = relationship(lazy='selectin', cascade='all, delete-orphan', order_by='ShipmentLine.position')
@@ -100,7 +110,9 @@ class Shipment(Base):
 class ShipmentLine(Base):
     __tablename__ = 'shipment_lines'
     units_per_carton: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    __table_args__ = (UniqueConstraint('shipment_id', 'product_id'), CheckConstraint('quantity > 0 AND received_quantity >= 0 AND received_quantity <= quantity'))
+    __table_args__ = (UniqueConstraint('shipment_id', 'purchase_line_id', name='uq_shipment_purchase_line'),
+                     Index('uq_shipment_warehouse_product', 'shipment_id', 'product_id', unique=True,
+                           sqlite_where=text('purchase_line_id IS NULL'), postgresql_where=text('purchase_line_id IS NULL')), CheckConstraint('quantity > 0 AND received_quantity >= 0 AND received_quantity <= quantity'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     shipment_id: Mapped[str] = mapped_column(ForeignKey('shipments.id'), index=True)
     product_id: Mapped[str] = mapped_column(ForeignKey('products.id'), index=True)

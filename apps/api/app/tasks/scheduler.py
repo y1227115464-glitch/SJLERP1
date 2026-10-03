@@ -8,7 +8,7 @@ from sqlalchemy import exists, select
 
 from app.core.security import aware, can_access_store, has_permission
 from app.models import Notification, new_id, now
-from app.supply.models import Shipment
+from app.supply.models import shipment_purchases
 from app.tasks.common import insert_tasks, source_allowed, task_row
 from app.tasks.dates import scheduled_times
 from app.tasks.models import RuleSchedule, SourceEvent, Task, TaskRule, TaskNotice
@@ -59,7 +59,7 @@ def deliver(db, moment):
     # Do not send stale reminders while a source event awaits reconciliation.
     source_pending = exists(select(SourceEvent.id).where(SourceEvent.processed_at.is_(None),
         (SourceEvent.source_id == Task.source_id) | SourceEvent.source_id.in_(
-            select(Shipment.purchase_order_id).where(Shipment.id == Task.source_id).correlate(Task))))
+            select(shipment_purchases.c.purchase_order_id).where(shipment_purchases.c.shipment_id == Task.source_id).correlate(Task))))
     tasks = db.scalars(select(Task).where(Task.status == 'pending', Task.suppressed.is_(False), Task.notify.is_(True),
         Task.due_time.is_not(None), Task.due_at <= moment, Task.notified_version < Task.schedule_version, ~source_pending)
         .order_by(Task.due_at, Task.id).limit(200).with_for_update(of=Task, skip_locked=True)).all()

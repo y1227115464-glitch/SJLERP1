@@ -10,8 +10,9 @@ export interface PurchaseOrder {
   ordered_at: string | null; status: string; order_date: string; expected_date: string | null; planned_ship_date: string | null; currency?: string; total_amount?: string;
   payment_terms?: string; notes: string; overdue: boolean; created_at: string; lines: PurchaseLine[];
 }
-export interface ShipmentLine { units_per_carton: number | null; carton_count: number | null; id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number }
+export interface ShipmentLine { purchase_line_id: string | null; purchase_number: string | null; units_per_carton: number | null; carton_count: number | null; id: string; product_id: string; product_name: string; internal_sku: string; quantity: number; received_quantity: number }
 export interface Shipment {
+  purchase_order_ids: string[]; purchase_orders: { id: string; number: string }[];
   merged_into_id: string | null;
   lines_version: string;
   id: string; number: string; store_id: string; store_name: string; purchase_order_id: string | null;

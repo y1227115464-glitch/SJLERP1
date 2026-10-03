@@ -36,7 +36,7 @@ class LineChange(Input):
 
     @model_validator(mode='after')
     def distinct_products(self):
-        if len({line.product_id for line in self.lines}) != len(self.lines):
+        if len({(getattr(line, 'purchase_line_id', None), line.product_id) for line in self.lines}) != len(self.lines):
             raise ValueError('同一商品只能填写一行')
         return self
 
@@ -46,4 +46,4 @@ class PurchaseLineChange(LineChange):
 
 
 class ShipmentLineChange(LineChange):
-    lines: list[ShipmentItem] = Field(min_length=1, max_length=100)
+    lines: list[ShipmentItem] = Field(min_length=1, max_length=1000)

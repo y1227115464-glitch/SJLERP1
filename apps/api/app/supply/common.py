@@ -10,7 +10,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.core.api import fail, require_store, store_filter
 from app.core.security import aware, has_permission
 from app.models import Product, new_id, now
-from app.supply.models import PurchaseOrder, Shipment, ShipmentEvent, ShipmentLine, SupplyOperation, Warehouse
+from app.supply.models import PurchaseLine, PurchaseOrder, shipment_purchases, Shipment, ShipmentEvent, ShipmentLine, SupplyOperation, Warehouse
 from app.supply.line_changes import lines_version
 
 
@@ -127,7 +127,11 @@ def shipment_out(record):
     result = values(record, 'id number store_id merged_into_id purchase_order_id source_warehouse_id destination_warehouse_id status stage carrier tracking_number amazon_shipment_id expected_date planned_ship_date notes shipped_at received_at created_at updated_at')
     result.update(store_name=record.store.name, source_name=record.source.name if record.source else '供应商',
                   destination_name=record.destination.name, destination_kind=record.destination.kind, overdue=overdue(record), lines_version=lines_version(record))
-    result['lines'] = [{**values(line, 'id product_id product_name internal_sku quantity received_quantity units_per_carton'),
+    result['purchase_order_ids'] = [order.id for order in record.purchases]
+    result['purchase_orders'] = [{'id': order.id, 'number': order.number} for order in record.purchases]
+    origins = {line.id: order for order in record.purchases for line in order.lines}
+    result['lines'] = [{**values(line, 'id purchase_line_id product_id product_name internal_sku quantity received_quantity units_per_carton'),
+                        'purchase_number': origins[line.purchase_line_id].number if line.purchase_line_id in origins else None,
                         'carton_count': line.quantity // line.units_per_carton if line.units_per_carton else None} for line in record.lines]
     return result
 
@@ -149,13 +153,17 @@ def locked_shipment(db, identifier, user):
     row = db.execute(scoped(select(Shipment.id, Shipment.purchase_order_id).where(Shipment.id == identifier), user, Shipment.store_id)).first()
     if row is None:
         fail(404, 'not_found', '货件不存在或无权访问')
-    purchase = scoped_record(db, PurchaseOrder, row.purchase_order_id, user, lock=True) if row.purchase_order_id else None
-    return scoped_record(db, Shipment, identifier, user, lock=True), purchase
+    ids = db.scalars(select(shipment_purchases.c.purchase_order_id).where(shipment_purchases.c.shipment_id == identifier)).all()
+    purchases = [scoped_record(db, PurchaseOrder, parent_id, user, lock=True) for parent_id in sorted(ids)]
+    record = scoped_record(db, Shipment, identifier, user, lock=True)
+    if {order.id for order in record.purchases} != set(ids):
+        fail(409, 'shipment_sources_changed', '货件刚刚合并，来源采购单已变化，请刷新重试')
+    return record, purchases
 
 
 def allocations(db, purchase_id):
     statement = select(ShipmentLine.product_id, func.sum(ShipmentLine.quantity - ShipmentLine.received_quantity)).join(
-        Shipment, Shipment.id == ShipmentLine.shipment_id).where(Shipment.purchase_order_id == purchase_id,
+        Shipment, Shipment.id == ShipmentLine.shipment_id).join(PurchaseLine, PurchaseLine.id == ShipmentLine.purchase_line_id).where(PurchaseLine.purchase_order_id == purchase_id,
         Shipment.status.in_(['planned', 'in_transit', 'partially_received'])).group_by(ShipmentLine.product_id)
     # PostgreSQL SUM(bigint) is numeric; API quantities must remain JSON integers.
     return {product_id: int(quantity) for product_id, quantity in db.execute(statement)}

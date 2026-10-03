@@ -104,9 +104,10 @@ def test_merge_rejects_invalid_route_status_and_stale_version(system):
 def test_merge_store_source_packing_and_logistics_boundaries(system):
     client, headers, product, supplier, source, target = fixtures(system)
     order = purchase(system, client, headers, product, supplier, 30)
-    other_order = purchase(system, client, headers, product, supplier, 30)
+    post(client, '/inventory/adjustments', headers, {'request_id': str(uuid4()), 'store_id': system['ids']['a'],
+        'warehouse_id': source['id'], 'product_id': product['id'], 'quantity': 6, 'reason': '来源边界测试', 'kind': 'opening'})
     a = shipment(system, client, headers, product, target, 6, order=order)
-    other = shipment(system, client, headers, product, target, 6, order=other_order)
+    other = shipment(system, client, headers, product, target, 6, source=source)
     post(client, '/shipments/merge', headers, merge_body(a, other), 409)
     b = shipment(system, client, headers, product, target, 6, order=order)
     from app.supply.models import Shipment, ShipmentLine

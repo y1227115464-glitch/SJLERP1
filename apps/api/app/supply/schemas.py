@@ -55,6 +55,7 @@ class ShipmentLinePacking(Input):
 
 
 class ShipmentItem(Input):
+    purchase_line_id: Identifier | None = None
     units_per_carton: CartonSize | None = None
     product_id: Identifier
     quantity: Quantity
@@ -64,6 +65,7 @@ class ShipmentInput(Input):
     request_id: UUID
     store_id: Identifier
     purchase_order_id: Identifier | None = None
+    purchase_order_ids: list[Identifier] = Field(default_factory=list, max_length=100)
     source_warehouse_id: Identifier | None = None
     destination_warehouse_id: Identifier | None = None
     carrier: str = Field(default='', max_length=120)
@@ -72,16 +74,24 @@ class ShipmentInput(Input):
     expected_date: date | None = None
     planned_ship_date: date | None = Field(default=None, ge=date(1901, 1, 1), le=date(2199, 12, 31))
     notes: str = Field(default='', max_length=5000)
-    lines: list[ShipmentItem] = Field(min_length=1, max_length=100)
+    lines: list[ShipmentItem] | None = Field(default=None, min_length=1, max_length=1000)
 
     @model_validator(mode='after')
     def valid_shipment(self):
-        if bool(self.purchase_order_id) == bool(self.source_warehouse_id):
+        if self.purchase_order_id:
+            if self.purchase_order_ids and self.purchase_order_ids != [self.purchase_order_id]:
+                raise ValueError('请勿同时提供不同的单个采购单和采购单列表')
+            self.purchase_order_ids = [self.purchase_order_id]
+        if len(set(self.purchase_order_ids)) != len(self.purchase_order_ids):
+            raise ValueError('采购单不能重复')
+        if bool(self.purchase_order_ids) == bool(self.source_warehouse_id):
             raise ValueError('请选择采购单或发货仓库作为唯一来源')
         if self.source_warehouse_id and self.source_warehouse_id == self.destination_warehouse_id:
             raise ValueError('发货仓库和目的仓库不能相同')
-        if len({line.product_id for line in self.lines}) != len(self.lines):
-            raise ValueError('同一商品只能填写一行')
+        if self.source_warehouse_id and (not self.lines or any(line.purchase_line_id for line in self.lines)):
+            raise ValueError('仓库发货须填写商品，且不能关联采购明细')
+        if self.lines and len({(line.purchase_line_id, line.product_id) for line in self.lines}) != len(self.lines):
+            raise ValueError('同一采购商品只能填写一行')
         return self
 
 
@@ -112,7 +122,7 @@ class ReceiptItem(Input):
 class ReceiptInput(Input):
     request_id: UUID
     notes: str = Field(default='', max_length=2000)
-    lines: list[ReceiptItem] = Field(min_length=1, max_length=100)
+    lines: list[ReceiptItem] = Field(min_length=1, max_length=1000)
 
     @model_validator(mode='after')
     def unique_lines(self):

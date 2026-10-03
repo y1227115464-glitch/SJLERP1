@@ -54,8 +54,7 @@ def list_orders(db: DB, page: Page, user: Reader, store_id: str | None = None, q
         statement = statement.where(PurchaseOrder.invoice_status == invoice_status)
     if shippable:
         allocated = select(func.coalesce(func.sum(ShipmentLine.quantity - ShipmentLine.received_quantity), 0)).join(
-            Shipment, Shipment.id == ShipmentLine.shipment_id).where(Shipment.purchase_order_id == PurchaseLine.purchase_order_id,
-            ShipmentLine.product_id == PurchaseLine.product_id, Shipment.status.in_(['planned', 'in_transit', 'partially_received'])).correlate(PurchaseLine).scalar_subquery()
+            Shipment, Shipment.id == ShipmentLine.shipment_id).where(ShipmentLine.purchase_line_id == PurchaseLine.id, Shipment.status.in_(['planned', 'in_transit', 'partially_received'])).correlate(PurchaseLine).scalar_subquery()
         available = select(PurchaseLine.id).where(PurchaseLine.purchase_order_id == PurchaseOrder.id,
             PurchaseLine.quantity - PurchaseLine.received_quantity - PurchaseLine.cancelled_quantity - PurchaseLine.transferred_quantity - PurchaseLine.supplier_stock_quantity > allocated).exists()
         statement = statement.where(PurchaseOrder.status.in_(['ordered', 'partially_received']), available)
