@@ -6,7 +6,7 @@ import { dateTime, EmptyState, ErrorNotice, PageHeading, usePagedList, useResour
 import { queryPath, useDebouncedValue } from './CatalogShared';
 import { movementKinds, options, RemoteSelect, requestId, required, StoreField, storeParam } from './SupplyShared';
 import type { InventoryBalance, Movement, StockSummary } from './supply-types';
-import type { Store, User } from './types';
+import type { ListResult, Store, User } from './types';
 import { adjustmentQuantity, productBelongsToStore } from './inventory-adjustment';
 import type { Product } from './catalog-types';
 
@@ -34,7 +34,7 @@ export function InventoryPage({ user, stores, selectedStore }: { user: User; sto
           { title: '实物', dataIndex: 'quantity', width: 90 }, { title: '占用', dataIndex: 'reserved', width: 90 }, { title: '可用', dataIndex: 'available', width: 100, render: value => <strong className={value === 0 ? 'supply-zero' : ''}>{value}</strong> }, { title: '最后变动', dataIndex: 'updated_at', width: 170, render: dateTime },
         ]} />
       </Card></> },
-      { key: 'movements', label: '库存流水', children: tab === 'movements' ? <MovementList key={version} selectedStore={selectedStore} /> : null },
+      { key: 'movements', label: '库存流水', children: tab === 'movements' ? <MovementList key={`${selectedStore}:${version}`} selectedStore={selectedStore} /> : null },
     ]} />
     {editing !== undefined && <AdjustmentEditor balance={editing} stores={stores} selectedStore={selectedStore} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); refresh(); }} />}
   </>;
@@ -42,9 +42,10 @@ export function InventoryPage({ user, stores, selectedStore }: { user: User; sto
 
 function MovementList({ selectedStore }: { selectedStore: string }) {
   const [kind, setKind] = useState<string>();
-  const resource = usePagedList<Movement>(queryPath('/inventory/movements', { store_id: storeParam(selectedStore), kind, warehouse_kind: 'fba' }));
+  const [productId, setProductId] = useState<string>();
+  const resource = usePagedList<Movement>(queryPath('/inventory/movements', { store_id: storeParam(selectedStore), product_id: productId, kind, warehouse_kind: 'fba' }));
   return <><ErrorNotice error={resource.error} retry={resource.reload} /><Card className="section-card" title="已过账流水" extra={<Button icon={<ReloadOutlined />} onClick={resource.reload}>刷新</Button>}>
-    <div className="catalog-filter-bar"><Select allowClear placeholder="全部变动类型" style={{ width: 200 }} value={kind} onChange={setKind} options={options(movementKinds)} /><span className="cell-secondary">已过账流水保留历史，差异通过新的调整记录处理。</span></div>
+    <div className="catalog-filter-bar"><InventorySkuFilter selectedStore={selectedStore} value={productId} onChange={setProductId} /><Select allowClear placeholder="全部变动类型" style={{ width: 200 }} value={kind} onChange={setKind} options={options(movementKinds)} /><span className="cell-secondary">已过账流水保留历史，差异通过新的调整记录处理。</span></div>
     <Table<Movement> rowKey="id" loading={resource.loading} dataSource={resource.data?.items ?? []} pagination={resource.pagination} scroll={{ x: 1320 }} columns={[
       { title: '时间 / 操作人', width: 180, render: (_, item) => <>{dateTime(item.created_at)}<small className="cell-secondary">{item.actor_name}</small></> },
       { title: '商品 / SKU', width: 230, render: (_, item) => <><strong>{item.internal_sku}</strong><small className="cell-secondary">{item.product_name}</small></> },
@@ -54,8 +55,29 @@ function MovementList({ selectedStore }: { selectedStore: string }) {
       { title: '占用变动', dataIndex: 'reserved_delta', width: 100, render: value => value > 0 ? `+${value}` : value },
       { title: '变动后实物 / 占用', width: 140, render: (_, item) => `${item.balance_after} / ${item.reserved_after}` },
       { title: '来源 / 原因', width: 280, render: (_, item) => <>{item.reference_number || '手工登记'}<small className="cell-secondary catalog-prewrap">{item.reason}</small></> },
-    ]} locale={{ emptyText: <EmptyState text="暂无库存变动。入库、发货、占用及调整会自动产生流水。" /> }} />
+    ]} locale={{ emptyText: <EmptyState text={productId || kind ? '当前筛选条件下暂无库存流水，请更换 SKU 或变动类型。' : '暂无库存变动。入库、发货、占用及调整会自动产生流水。'} /> }} />
   </Card></>;
+}
+
+function InventorySkuFilter({ selectedStore, value, onChange }: { selectedStore: string; value?: string; onChange: (value?: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [selection, setSelection] = useState<{ value: string; label: string; name: string }>();
+  const q = useDebouncedValue(search);
+  const resource = useResource<ListResult<InventoryBalance>>(open ? queryPath('/inventory', {
+    store_id: storeParam(selectedStore), warehouse_kind: 'fba', q, limit: '200',
+  }) : null);
+  const choices = [...new Map((resource.data?.items ?? []).map(item => [item.product_id, {
+    value: item.product_id, label: item.internal_sku, name: item.product_name,
+  }])).values()];
+  if (value && selection?.value === value && !choices.some(item => item.value === value)) choices.unshift(selection);
+  return <Select aria-label="按 SKU 筛选库存流水" allowClear className="catalog-search" placeholder="搜索并选择 SKU（全部 SKU）"
+    value={value} loading={resource.loading} options={choices} onOpenChange={setOpen}
+    showSearch={{ filterOption: false, onSearch: setSearch }}
+    optionRender={option => <><strong>{option.data.label}</strong><small className="cell-secondary">{option.data.name}</small></>}
+    onChange={id => { setSelection(choices.find(item => item.value === id)); setSearch(''); onChange(id); }}
+    notFoundContent={resource.error ? <Alert type="error" title={resource.error} /> : resource.loading ? '加载中…' : '没有匹配的 FBA 库存 SKU'}
+    popupRender={menu => <>{menu}{(resource.data?.total ?? 0) > 200 && <div className="cell-secondary" style={{ padding: 8 }}>仅显示前 200 条库存对应的 SKU，请输入更完整的 SKU 缩小范围。</div>}</>} />;
 }
 
 function AdjustmentEditor({ balance, stores, selectedStore, onClose, onSaved }: { balance: InventoryBalance | null; stores: Store[]; selectedStore: string; onClose: () => void; onSaved: () => void }) {
