@@ -28,7 +28,7 @@ export function InventoryPage({ user, stores, selectedStore }: { user: User; sto
       { key: 'balances', label: '库存余额', children: <><ErrorNotice error={resource.error} retry={resource.reload} /><Card className="section-card" title="FBA仓库商品库存" extra={<Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>}>
         <div className="catalog-filter-bar"><Input className="catalog-search" prefix={<SearchOutlined />} placeholder="搜索商品名称或内部 SKU" value={q} onChange={event => setQ(event.target.value)} allowClear /></div>
         <Table<InventoryBalance> rowKey="id" dataSource={resource.data?.items ?? []} loading={resource.loading} pagination={resource.pagination} scroll={{ x: 950 }} locale={{ emptyText: <EmptyState text="暂无库存记录。可登记期初数量，或从采购货件接收入库。" /> }} columns={[
-          { title: '商品 / SKU', width: 270, render: (_, item) => <>{item.product_name}<small className="cell-secondary">{item.internal_sku}</small></> },
+          { title: '商品 / SKU', width: 270, render: (_, item) => <><strong>{item.internal_sku}</strong><small className="cell-secondary">{item.product_name}</small></> },
           { title: '店铺', dataIndex: 'store_name', width: 160 },
           ...(user.permissions.includes('inventory.adjust') ? [{ title: '操作', width: 80, render: (_: unknown, item: InventoryBalance) => <Button type="link" onClick={() => setEditing(item)}>调整</Button> }] : []),
           { title: '实物', dataIndex: 'quantity', width: 90 }, { title: '占用', dataIndex: 'reserved', width: 90 }, { title: '可用', dataIndex: 'available', width: 100, render: value => <strong className={value === 0 ? 'supply-zero' : ''}>{value}</strong> }, { title: '最后变动', dataIndex: 'updated_at', width: 170, render: dateTime },
@@ -47,7 +47,7 @@ function MovementList({ selectedStore }: { selectedStore: string }) {
     <div className="catalog-filter-bar"><Select allowClear placeholder="全部变动类型" style={{ width: 200 }} value={kind} onChange={setKind} options={options(movementKinds)} /><span className="cell-secondary">已过账流水保留历史，差异通过新的调整记录处理。</span></div>
     <Table<Movement> rowKey="id" loading={resource.loading} dataSource={resource.data?.items ?? []} pagination={resource.pagination} scroll={{ x: 1320 }} columns={[
       { title: '时间 / 操作人', width: 180, render: (_, item) => <>{dateTime(item.created_at)}<small className="cell-secondary">{item.actor_name}</small></> },
-      { title: '商品 / SKU', width: 230, render: (_, item) => <>{item.product_name}<small className="cell-secondary">{item.internal_sku}</small></> },
+      { title: '商品 / SKU', width: 230, render: (_, item) => <><strong>{item.internal_sku}</strong><small className="cell-secondary">{item.product_name}</small></> },
       { title: '店铺', dataIndex: 'store_name', width: 160 },
       { title: '类型', dataIndex: 'kind', width: 130, render: value => <Tag>{movementKinds[value]}</Tag> },
       { title: '实物变动', dataIndex: 'quantity', width: 100, render: value => value > 0 ? `+${value}` : value },
