@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Col, Form, Input, Modal, Row } from 'antd';
+import { allocatedShipmentRows } from './shipment-grid';
 import { api, errorText } from './api';
 import { ErrorNotice } from './common';
 import { requestId } from './SupplyShared';
@@ -35,7 +36,7 @@ export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: 
     form.setFieldValue('lines', [...retained, ...added]);
     previousOrders.current = purchase.orders.map(order => order.id);
   }, [purchase.orders, purchase.loading, purchase.error, form, supplier, shipment.lines]);
-  return <Modal open title="修改发货产品及数量（不建议操作）" width={960} onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText="保存修改" okButtonProps={{ danger: true, disabled: !!shipment.purchase_order_id && (purchase.loading || !!purchase.error) }}>
+  return <Modal open title="修改发货产品及数量（不建议操作）" width={1200} onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText="保存修改" okButtonProps={{ danger: true, disabled: !!shipment.purchase_order_id && (purchase.loading || !!purchase.error) }}>
     <Alert className="page-notice" type="warning" showIcon title="不建议操作：仅在确认发货记录有误时修改" description="保存会调整采购分配、库存占用或已发出数量，并写入跟进记录。已接收的商品不能移除或替换，数量不得低于已接收数。请核对实际发货和 Amazon 货件资料。" />
     <ErrorNotice error={error || purchase.error} />
     <Form form={form} layout="vertical" initialValues={{ purchase_order_ids: shipment.purchase_order_ids, lines: shipment.lines.map(line => ({ supplier_stock_id: line.supplier_stock_id, purchase_line_id: line.purchase_line_id, product_id: line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton,
@@ -46,7 +47,7 @@ export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: 
       try { await api(`/shipments/${shipment.id}/lines`, { method: 'PATCH', body: {
         request_id: token, expected_version: shipment.lines_version, reason: values.reason || '',
         ...(supplier ? { purchase_order_ids: values.purchase_order_ids } : {}),
-        lines: values.lines.map(line => ({ supplier_stock_id: line.supplier_stock_id, purchase_line_id: line.purchase_line_id, product_id: line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton })),
+        lines: allocatedShipmentRows(values.lines).map(line => ({ supplier_stock_id: line.supplier_stock_id, purchase_line_id: line.purchase_line_id, product_id: line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton })),
       } }); onSaved(); } catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
     }}>
       <Row gutter={16}><Col span={12}><Form.Item label="所属店铺"><Input value={shipment.store_name} readOnly /></Form.Item></Col>
@@ -56,7 +57,7 @@ export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: 
       </Form.Item> : <Form.Item label="发货仓库"><Input value={shipment.source_name} readOnly /></Form.Item>}</Col>
         <Col span={12}><Form.Item label="目的仓库"><Input value={shipment.destination_name} readOnly /></Form.Item></Col></Row>
       {supplier && <Alert className="page-notice" type="info" title={purchase.loading ? '正在载入采购商品…' : `已选择 ${selectedIds.length} 个采购单；原有商品数量保留，新增采购单默认带入全部可发商品。`} />}
-      <ShipmentSourceRows form={form} supplier={supplier} storeId={shipment.store_id} purchaseLines={purchaseLines} loading={purchase.loading || !!purchase.error} shipment={shipment} warehouseLabel={shipment.source_name} />
+      <ShipmentSourceRows form={form} supplier={supplier} storeId={shipment.store_id} purchaseLines={purchaseLines} purchaseOrders={purchase.orders} loading={purchase.loading || !!purchase.error} shipment={shipment} warehouseLabel={shipment.source_name} />
       <Form.Item name="reason" label="修改说明" style={{ marginTop: 20 }}><Input.TextArea rows={2} maxLength={1000} placeholder="说明实际发货与原记录的差异，供后续跟进核对" /></Form.Item>
     </Form>
   </Modal>;

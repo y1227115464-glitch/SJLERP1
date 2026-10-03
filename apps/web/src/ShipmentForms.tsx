@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Col, Form, Input, Modal, Row, Select } from 'antd';
+import { allocatedShipmentRows } from './shipment-grid';
 import { api, errorText } from './api';
 import { ErrorNotice } from './common';
 import { activeWarehousesPath, options, QuantityInput, RemoteSelect, requestId, required, stageLabels, StoreField, storeParam } from './SupplyShared';
@@ -39,21 +40,21 @@ export function ShipmentEditor({ user, stores, selectedStore, purchase, onClose,
     const body = { request_id: token, store_id: values.store_id, destination_warehouse_id: values.destination_warehouse_id,
       ...(mode === 'supplier' ? { purchase_order_ids: values.purchase_order_ids } : { source_warehouse_id: values.source_warehouse_id }),
       carrier: values.carrier || '', tracking_number: values.tracking_number || '', amazon_shipment_id: values.amazon_shipment_id || '',
-      expected_date: values.expected_date || null, planned_ship_date: values.planned_ship_date || null, notes: values.notes || '', lines: values.lines.map(line => ({ supplier_stock_id: line.supplier_stock_id, purchase_line_id: line.purchase_line_id, product_id: line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton })) };
+      expected_date: values.expected_date || null, planned_ship_date: values.planned_ship_date || null, notes: values.notes || '', lines: allocatedShipmentRows(values.lines).map(line => ({ supplier_stock_id: line.supplier_stock_id, purchase_line_id: line.purchase_line_id, product_id: line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton })) };
     try { await api('/shipments', { method: 'POST', body }); onSaved(); }
     catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
   };
-  return <Modal open title={purchase ? '安排供应商发货' : '新建发货计划'} width={960} onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText="保存发货计划" okButtonProps={{ disabled: mode === 'supplier' && (detail.loading || !!detail.error) }}>
+  return <Modal open title={purchase ? '安排供应商发货' : '新建发货计划'} width={1200} onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText="保存发货计划" okButtonProps={{ disabled: mode === 'supplier' && (detail.loading || !!detail.error) }}>
     <ErrorNotice error={error || detail.error} />
-    <Alert type="info" showIcon className="page-notice" title={mode === 'supplier' ? '支持采购余量和供应商库存混合发货。每行独立显示数量来源，同一 SKU 的不同来源分别计量。' : '保存计划时占用可用库存；确认发出时扣减实物，接收后增加 FBA 仓库库存。'} />
+    <Alert type="info" showIcon className="page-notice" title={mode === 'supplier' ? '支持采购余量和供应商库存混合发货。同一 SKU 合并为一行，按采购单和供应商库存分列填写，共计自动汇总。' : '保存计划时占用可用库存；确认发出时扣减实物，接收后增加 FBA 仓库库存。'} />
     {!purchase && <Select aria-label="发货来源" value={mode} onChange={changeMode} style={{ width: '100%', marginBottom: 20 }} options={[{ value: 'warehouse', label: '已有仓库库存 → FBA仓库' }, ...(user.permissions.includes('purchases.view') ? [{ value: 'supplier', label: '供应商发货 → FBA仓库' }] : [])]} />}
     <Form form={form} layout="vertical" onFinish={save} initialValues={{ store_id: purchase?.store_id || storeParam(selectedStore), purchase_order_ids: purchase ? [purchase.id] : [], lines: mode === 'supplier' ? [] : [{ quantity: 1 }] }}
       onValuesChange={changes => { if ('store_id' in changes) { previousOrders.current = []; form.setFieldsValue({ purchase_order_ids: [], lines: mode === 'supplier' ? [] : [{ product_id: '', quantity: 1 }] }); } }}>
       <StoreField stores={stores} fixed={!!purchase} />
       <Row gutter={16}><Col span={12}>{mode === 'supplier' ? <Form.Item name="purchase_order_ids" label="采购单（可多选）" extra="也可不选采购单，直接从供应商库存添加 SKU。"><PurchaseMultiSelect storeId={watchedStore} selectedOrders={[...(purchase ? [purchase] : []), ...detail.orders]} /></Form.Item> : <Form.Item name="source_warehouse_id" label="发货仓库" rules={required}><RemoteSelect path={activeWarehousesPath} onRecord={warehouse => setWarehouseLabel(warehouse.name || warehouse.code || warehouse.id)} /></Form.Item>}</Col>
         <Col span={12}><Form.Item label="目的仓库"><Input value="FBA仓库" readOnly /></Form.Item></Col></Row>
-      {mode === 'supplier' && watchedPurchases.length > 0 && <Alert className="page-notice" type={remaining.length || detail.loading ? 'info' : 'warning'} title={detail.loading ? '正在载入采购商品…' : `已选择 ${watchedPurchases.length} 个采购单，共 ${remaining.length} 行可发商品；相同 SKU 按来源采购单分别显示。`} />}
-      <ShipmentSourceRows form={form} supplier={mode === 'supplier'} storeId={watchedStore} purchaseLines={remaining} loading={detail.loading || !!detail.error} warehouseLabel={warehouseLabel} />
+      {mode === 'supplier' && watchedPurchases.length > 0 && <Alert className="page-notice" type={remaining.length || detail.loading ? 'info' : 'warning'} title={detail.loading ? '正在载入采购商品…' : `已选择 ${watchedPurchases.length} 个采购单，共 ${new Set(remaining.map(line => line.product_id)).size} 个可发 SKU；每个采购单对应一列。`} />}
+      <ShipmentSourceRows form={form} supplier={mode === 'supplier'} storeId={watchedStore} purchaseLines={remaining} purchaseOrders={detail.orders} loading={detail.loading || !!detail.error} warehouseLabel={warehouseLabel} />
       <p className="catalog-field-help">本单箱规独立保存，后续商品箱规变更不会影响本单。采购余量不足整箱时，可调整本批数量或维护实际箱规。</p><LogisticsFields />
     </Form>
   </Modal>;
