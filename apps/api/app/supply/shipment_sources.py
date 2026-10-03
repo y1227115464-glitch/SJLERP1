@@ -5,13 +5,18 @@ from app.supply.schemas import ShipmentItem
 
 
 def line_key(line):
-    return line.purchase_line_id or line.product_id
+    return ('stock:' + line.supplier_stock_id) if line.supplier_stock_id else (line.purchase_line_id or line.product_id)
 
 
-def resolve_items(purchases, items):
+def resolve_items(purchases, items, stocks=None):
     purchased = {line.id: line for order in purchases for line in order.lines}
     resolved = []
     for item in items:
+        if item.supplier_stock_id:
+            stock = (stocks or {}).get(item.supplier_stock_id)
+            if not stock or stock.line.product_id != item.product_id or (item.purchase_line_id and item.purchase_line_id != stock.purchase_line_id):
+                fail(422, 'invalid_supplier_stock', '供应商库存批次与商品或采购明细不匹配')
+            item = item.model_copy(update={'purchase_line_id': stock.purchase_line_id})
         if purchases:
             matches = [line for line in purchased.values() if line.product_id == item.product_id
                        and (not item.purchase_line_id or line.id == item.purchase_line_id)]

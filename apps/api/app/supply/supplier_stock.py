@@ -77,7 +77,7 @@ def stock_out(stock, user):
     result.update(supplier_name=stock.purchase.supplier.name, store_name=stock.purchase.store.name,
                   purchase_number=stock.purchase.number, product_id=stock.line.product_id,
                   internal_sku=stock.line.internal_sku,
-                  product_name=stock.line.product.name_zh or stock.line.product_name)
+                  product_name=stock.line.product.name_zh or stock.line.product_name, units_per_carton=stock.line.product.units_per_carton)
     if has_permission(user, 'costs.view'):
         result.update(unit_price=format(stock.line.unit_price, '.4f'), currency=stock.purchase.currency)
     return result

@@ -8,7 +8,7 @@ import type { PurchaseOrder } from './supply-types';
 import type { User } from './types';
 
 const payments: Record<string, string> = { unknown: '待核实', unpaid: '未付款', partial: '部分付款', paid: '已付款' };
-const kinds: Record<string, string> = { transfer: '采购转入', release: '转回采购待发货', payment: '更新付款情况' };
+const kinds: Record<string, string> = { transfer: '采购转入', release: '转回采购待发货', payment: '更新付款情况', shipment: '发货分配 / 退回' };
 interface Stock {
   id: string; store_id: string; store_name: string; supplier_id: string; supplier_name: string;
   purchase_order_id: string; purchase_number: string; product_name: string; internal_sku: string;
@@ -34,7 +34,7 @@ export function SupplierStockPanel({ user, selectedStore, version, onChanged, on
   useEffect(() => { summary.reload(); skus.reload(); resource.reload(); }, [version, summary.reload, skus.reload, resource.reload]);
   const refresh = onChanged;
   return <>
-    <Alert className="page-notice" type="info" showIcon title="供应商代存库存" description="从采购单将未分配发货的余量转入，按供应商、店铺和采购批次管理。原采购金额和付款记录保留；需要发货时先分批转回原采购单，再安排供应商发货。" />
+    <Alert className="page-notice" type="info" showIcon title="供应商代存库存" description="从采购单将未分配发货的余量转入，按供应商、店铺和采购批次管理。原采购金额和付款记录保留；需要发货时可在新建或修改发货弹窗中直接选择库存批次，也可先转回采购待发货。" />
     <ErrorNotice error={summary.error || skus.error || resource.error} retry={() => { summary.reload(); skus.reload(); resource.reload(); }} />
     <Card title="各供应商现存库存" className="section-card" extra={<Button onClick={refresh}>刷新库存</Button>}>
       <Table<Summary> rowKey="id" loading={summary.loading} dataSource={summary.data?.items ?? []} pagination={summary.pagination} size="small" columns={[

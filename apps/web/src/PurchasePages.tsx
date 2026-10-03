@@ -95,7 +95,7 @@ function PurchaseDetails({ id, user, onClose, onEdit, onPlan, onTransfer, onStoc
       ]} />
       <PurchaseFinance order={order} user={user} onSaved={onChanged} />
       <h3 className="catalog-section-title">商品及交付情况</h3>
-      {order.lines.some(line => line.supplier_stock_quantity > 0) && <p className="catalog-field-help">供应商库存仍计入本单采购金额，暂不参与发货。需要发货时，在「供应商库存」中转回采购待发货。</p>}
+      {order.lines.some(line => line.supplier_stock_quantity > 0) && <p className="catalog-field-help">供应商库存仍计入本单采购金额。需要发货时，可在新建或修改发货弹窗中直接从供应商库存添加 SKU，也可转回采购待发货。</p>}
       {order.lines.some(line => line.transferred_quantity > 0) && <p className="catalog-field-help">采购量、箱数与重量保留原单记录；已转出部分由新采购单继续跟进，本单采购金额、到货进度及可安排发货数量已扣除转出部分。</p>}
       <Table rowKey="id" dataSource={order.lines} pagination={false} scroll={{ x: 1150 }} columns={[
         { title: 'SKU / 中文商品名', render: (_, line) => <>{line.internal_sku}<small className="cell-secondary">{line.product_name_zh || line.product_name}</small>{user.permissions.includes('products.manage') && <Button type="link" size="small" onClick={() => setProductId(line.product_id)}>编辑商品信息</Button>}</> },

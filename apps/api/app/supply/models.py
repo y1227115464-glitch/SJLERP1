@@ -108,9 +108,13 @@ class Shipment(Base):
 
 
 class ShipmentLine(Base):
+    supplier_stock = relationship('SupplierStock', lazy='joined')
+    supplier_stock_id: Mapped[str | None] = mapped_column(ForeignKey('supplier_stock.id'), nullable=True, index=True)
     __tablename__ = 'shipment_lines'
     units_per_carton: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    __table_args__ = (UniqueConstraint('shipment_id', 'purchase_line_id', name='uq_shipment_purchase_line'),
+    __table_args__ = (Index('uq_shipment_purchase_line', 'shipment_id', 'purchase_line_id', unique=True,
+                           sqlite_where=text('supplier_stock_id IS NULL'), postgresql_where=text('supplier_stock_id IS NULL')),
+                     UniqueConstraint('shipment_id', 'supplier_stock_id', name='uq_shipment_supplier_stock'),
                      Index('uq_shipment_warehouse_product', 'shipment_id', 'product_id', unique=True,
                            sqlite_where=text('purchase_line_id IS NULL'), postgresql_where=text('purchase_line_id IS NULL')), CheckConstraint('quantity > 0 AND received_quantity >= 0 AND received_quantity <= quantity'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

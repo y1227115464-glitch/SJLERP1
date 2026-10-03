@@ -79,7 +79,7 @@ def merge(payload, db, user):
             existing[product_id].quantity = quantity
         else:
             line = samples[product_id]
-            target.lines.append(ShipmentLine(product_id=line.product_id, purchase_line_id=line.purchase_line_id,
+            target.lines.append(ShipmentLine(product_id=line.product_id, purchase_line_id=line.purchase_line_id, supplier_stock_id=line.supplier_stock_id,
                 product_name=line.product_name, internal_sku=line.internal_sku, units_per_carton=line.units_per_carton,
                 position=len(target.lines), quantity=quantity, received_quantity=0))
     source_numbers = []

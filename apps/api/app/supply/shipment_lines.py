@@ -6,6 +6,7 @@ from app.supply.line_changes import check_version
 from app.supply.models import Shipment, ShipmentLine
 from app.supply.packing import require_whole_cartons
 from app.supply.shipment_sources import line_key, resolve_items
+from app.supply.shipment_stock import stock_sources, apply_stock_changes
 from app.supply.stock import StockChange, change_stock
 from app.tasks.events import enqueue
 
@@ -28,9 +29,9 @@ def validate_lines(db, record, purchases, items):
         packing[line_key(item)] = require_whole_cartons(item.quantity, size)
         if purchases:
             ordered = purchased.get(item.purchase_line_id)
-            own_pending = line.quantity - line.received_quantity if line else 0
+            own_pending = sum(row.quantity - row.received_quantity for row in record.lines if row.purchase_line_id == item.purchase_line_id)
             others = allocated[ordered.purchase_order_id].get(item.product_id, 0) - own_pending
-            pending = item.quantity - (line.received_quantity if line else 0)
+            pending = sum(row.quantity for row in items if row.purchase_line_id == item.purchase_line_id) - sum(row.received_quantity for row in record.lines if row.purchase_line_id == item.purchase_line_id)
             if not ordered or pending > ordered.quantity - ordered.received_quantity - ordered.cancelled_quantity - ordered.transferred_quantity - ordered.supplier_stock_quantity - others:
                 fail(409, 'purchase_overallocated', '商品不在采购单内，或修改后的数量超过采购可分配余量；请先调整采购单')
     return existing, requested, products, purchased, packing
@@ -43,8 +44,12 @@ def amend_shipment(identifier, payload, db, user):
             fail(422, 'warehouse_source_locked', '仓库发货不能改为采购单发货')
         if set(payload.purchase_order_ids) != {order.id for order in snapshot.purchases} and not has_permission(user, 'purchases.view'):
             fail(403, 'permission_denied', '当前账号不能更换关联采购单')
+    stocks = stock_sources(db, user, payload.lines, snapshot.store_id)
+    stock_order_ids = {stock.purchase_order_id for stock in stocks.values()}
+    if snapshot.source_warehouse_id and stocks:
+        fail(422, 'warehouse_source_locked', '仓库发货不能混入供应商库存')
     inserted, _ = operation(db, payload, user, f'shipment.lines:{identifier}', identifier)
-    record, locked_purchases = locked_shipment(db, identifier, user, additional_purchase_ids=payload.purchase_order_ids or ())
+    record, locked_purchases = locked_shipment(db, identifier, user, additional_purchase_ids=set(payload.purchase_order_ids or ()) | stock_order_ids)
     if not inserted:
         return shipment_detail(db, record)
     if record.status not in {'planned', 'in_transit', 'partially_received'}:
@@ -53,16 +58,27 @@ def amend_shipment(identifier, payload, db, user):
     check_version(record, payload.expected_version)
     original_purchases = list(record.purchases)
     original_ids = {order.id for order in original_purchases}
-    selected_ids = set(payload.purchase_order_ids) if payload.purchase_order_ids is not None else original_ids
+    selected_ids = set(payload.purchase_order_ids) if payload.purchase_order_ids is not None else set(original_ids)
+    selected_ids |= stock_order_ids
+    if len(selected_ids) > 100:
+        fail(422, 'shipment_purchase_limit', '单个发货计划最多关联 100 个采购单')
+    if not record.source_warehouse_id and not selected_ids:
+        fail(422, 'missing_purchase', '供应商发货必须保留采购或供应商库存来源')
     purchases = [order for order in locked_purchases if order.id in selected_ids]
     for order in purchases:
-        if order.store_id != record.store_id or (order.id not in original_ids and order.status not in {'ordered', 'partially_received'}):
+        if order.store_id != record.store_id or (order.id not in original_ids and order.status not in {'ordered', 'partially_received'} and not (order.status == 'closed' and order.id in stock_order_ids)):
             fail(409, 'invalid_purchase', '采购单店铺不匹配，或采购单尚未提交/已经结束')
     removed = [order for order in original_purchases if order.id not in selected_ids]
     removed_lines = {line.id for order in removed for line in order.lines}
     if any(line.received_quantity and line.purchase_line_id in removed_lines for line in record.lines):
         fail(409, 'received_purchase_locked', '已有商品接收的来源采购单不能移除，请保留该采购单及已接收商品')
-    items, _ = resolve_items(purchases, payload.lines)
+    items, _ = resolve_items(purchases, payload.lines, stocks)
+    requested_by_key = {line_key(item): item for item in items}
+    for line in record.lines:
+        requested = requested_by_key.get(line_key(line))
+        if line.received_quantity and (not requested or requested.quantity < line.received_quantity):
+            fail(409, 'received_line_locked', '已接收商品不能移除、替换或减少到已接收数量以下')
+    apply_stock_changes(db, user, locked_purchases, record.lines, items, record.number)
     existing, requested, products, purchased, packing = validate_lines(db, record, purchases, items)
     notes, deltas = [], {}
     if selected_ids != original_ids:
@@ -95,7 +111,7 @@ def amend_shipment(identifier, payload, db, user):
             product = products[item.product_id]
             record.lines.append(ShipmentLine(product_id=product.id, product_name=product.name,
                 internal_sku=product.internal_sku, position=position, quantity=item.quantity, received_quantity=0,
-                units_per_carton=packing[line_key(item)], purchase_line_id=item.purchase_line_id))
+                units_per_carton=packing[line_key(item)], purchase_line_id=item.purchase_line_id, supplier_stock_id=item.supplier_stock_id))
     if record.status != 'planned':
         complete = all(line.quantity == line.received_quantity for line in record.lines)
         record.status = 'received' if complete else 'partially_received' if any(line.received_quantity for line in record.lines) else 'in_transit'

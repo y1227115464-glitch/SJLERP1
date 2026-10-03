@@ -12,6 +12,7 @@ from app.supply.models import PurchaseOrder, Shipment, ShipmentLine
 from app.supply.schemas import ActionInput, EventInput, ReceiptInput, ShipmentInput, ShipmentUpdate, ShipmentLinePacking
 from app.supply.packing import require_whole_cartons
 from app.supply.shipment_sources import default_items, resolve_items
+from app.supply.shipment_stock import stock_sources, apply_stock_changes
 from app.supply.stock import StockChange, change_stock
 from app.supply.defaults import resolve_warehouse
 from app.supply.line_changes import ShipmentLineChange
@@ -59,23 +60,32 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
     destination = resolve_warehouse(db, user, payload.destination_warehouse_id)
     if payload.source_warehouse_id == destination.id:
         fail(422, 'same_warehouse', '发货仓库和目的仓库不能相同')
+    stocks = stock_sources(db, user, payload.lines or [], payload.store_id)
+    stock_order_ids = {stock.purchase_order_id for stock in stocks.values()}
+    purchase_ids = set(payload.purchase_order_ids) | stock_order_ids
+    if len(purchase_ids) > 100:
+        fail(422, 'shipment_purchase_limit', '单个发货计划最多关联 100 个采购单')
     purchases = []
-    if payload.purchase_order_ids:
+    if purchase_ids:
         if not has_permission(user, 'purchases.view'):
             fail(403, 'permission_denied', '当前账号不能关联采购单')
-        for purchase_id in sorted(payload.purchase_order_ids):
+        for purchase_id in sorted(purchase_ids):
             purchase = scoped_record(db, PurchaseOrder, purchase_id, user, lock=True)
-            if purchase.store_id != payload.store_id or purchase.status not in {'ordered', 'partially_received'}:
+            if purchase.store_id != payload.store_id or (purchase.status not in {'ordered', 'partially_received'} and not (purchase.status == 'closed' and purchase_id in stock_order_ids)):
                 fail(409, 'invalid_purchase', '采购单店铺不匹配，或采购单尚未提交/已经结束')
             purchases.append(purchase)
     else:
         active_warehouse(db, payload.source_warehouse_id)
-    items, purchased = resolve_items(purchases, payload.lines if payload.lines is not None else default_items(db, purchases))
+    items, purchased = resolve_items(purchases, payload.lines if payload.lines is not None else default_items(db, purchases), stocks)
     products = active_products(db, {line.product_id for line in items})
     allocated = {order.id: allocations(db, order.id) for order in purchases}
     record = Shipment(id=identifier, number=number('SH'), destination_warehouse_id=destination.id,
                       purchase_order_id=purchases[0].id if purchases else None, purchases=purchases,
                       **payload.model_dump(exclude={'request_id', 'lines', 'destination_warehouse_id', 'purchase_order_id', 'purchase_order_ids'}))
+    apply_stock_changes(db, user, purchases, [], items, record.number)
+    requested = {}
+    for item in items:
+        requested[item.purchase_line_id] = requested.get(item.purchase_line_id, 0) + item.quantity
     for position, item in enumerate(items):
         size = require_whole_cartons(item.quantity, item.units_per_carton if item.units_per_carton is not None
                                     else products[item.product_id].units_per_carton)
@@ -84,7 +94,7 @@ def create(payload: ShipmentInput, db: DB, user: Writer):
             remaining = (ordered.quantity - ordered.received_quantity - ordered.cancelled_quantity
                          - ordered.transferred_quantity - ordered.supplier_stock_quantity
                          - allocated[ordered.purchase_order_id].get(item.product_id, 0))
-            if item.quantity > remaining:
+            if requested[item.purchase_line_id] > remaining:
                 fail(409, 'purchase_overallocated', '发货数量超过对应采购单尚未分配的余量')
         record.lines.append(ShipmentLine(position=position, product_name=products[item.product_id].name,
             internal_sku=products[item.product_id].internal_sku, units_per_carton=size,
@@ -155,6 +165,7 @@ def cancel(identifier: str, payload: ActionInput, db: DB, user: Writer):
     if record.source_warehouse_id:
         change_stock(db, user, StockChange(record.store_id, record.source_warehouse_id,
             {line.product_id: (0, -line.quantity) for line in record.lines}, 'release', identifier, record.number, '取消计划释放占用'))
+    apply_stock_changes(db, user, record.purchases, record.lines, [], record.number)
     record.status, record.stage = 'cancelled', 'cancelled'
     event(db, record, user, 'cancelled', '取消待发计划')
     audit(db, user, 'shipments.cancel', 'shipment', identifier, '取消待发计划', record.store_id)

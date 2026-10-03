@@ -130,8 +130,10 @@ def shipment_out(record):
     result['purchase_order_ids'] = [order.id for order in record.purchases]
     result['purchase_orders'] = [{'id': order.id, 'number': order.number} for order in record.purchases]
     origins = {line.id: order for order in record.purchases for line in order.lines}
-    result['lines'] = [{**values(line, 'id purchase_line_id product_id product_name internal_sku quantity received_quantity units_per_carton'),
+    result['lines'] = [{**values(line, 'id purchase_line_id supplier_stock_id product_id product_name internal_sku quantity received_quantity units_per_carton'),
                         'purchase_number': origins[line.purchase_line_id].number if line.purchase_line_id in origins else None,
+                        'supplier_name': origins[line.purchase_line_id].supplier.name if line.purchase_line_id in origins else None,
+                        'supplier_stock_remaining_quantity': line.supplier_stock.remaining_quantity if line.supplier_stock else None,
                         'carton_count': line.quantity // line.units_per_carton if line.units_per_carton else None} for line in record.lines]
     return result
 
