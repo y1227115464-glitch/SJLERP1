@@ -15,7 +15,10 @@ def lines_version(record):
     rows = [(line.id, line.product_id, line.quantity, line.received_quantity,
              getattr(line, 'cancelled_quantity', 0), getattr(line, 'transferred_quantity', 0), getattr(line, 'supplier_stock_quantity', 0), getattr(line, 'units_per_carton', None))
             for line in record.lines]
-    return hashlib.sha256(json.dumps([record.status, sorted(rows)]).encode()).hexdigest()
+    version = [record.status, sorted(rows)]
+    if hasattr(record, 'purchases'):
+        version.append(sorted(order.id for order in record.purchases))
+    return hashlib.sha256(json.dumps(version).encode()).hexdigest()
 
 
 def check_version(record, expected):
@@ -46,4 +49,12 @@ class PurchaseLineChange(LineChange):
 
 
 class ShipmentLineChange(LineChange):
+    purchase_order_ids: list[Identifier] | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode='after')
+    def distinct_purchases(self):
+        if self.purchase_order_ids and len(set(self.purchase_order_ids)) != len(self.purchase_order_ids):
+            raise ValueError('采购单不能重复')
+        return self
+
     lines: list[ShipmentItem] = Field(min_length=1, max_length=1000)

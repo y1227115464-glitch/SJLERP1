@@ -162,12 +162,12 @@ def apply_event(db, event, moment):
         rules = db.scalars(select(TaskRule).where(TaskRule.owner_id == event.actor_id, TaskRule.enabled.is_(True),
                            TaskRule.active_since <= event.created_at, TaskRule.kind.in_(['purchase_order', 'production', 'dispatch']))).all()
         materialize(db, source, event.source_kind, rules, aware(event.created_at), moment)
-        if isinstance(source, Shipment) and source.purchase_order_id:
-            # Carry the parent's enabled dispatch rules into each batch, even if a colleague creates the shipment.
-            inherited = db.scalars(select(TaskRule).where(TaskRule.enabled.is_(True), TaskRule.id.in_(
-                select(Task.rule_id).where(Task.source_kind == 'purchase', Task.source_id.in_([order.id for order in source.purchases]),
-                                           Task.action_kind == 'dispatch', Task.status == 'pending')))).all()
-            materialize(db, source, 'shipment', inherited, aware(event.created_at), moment)
+    if event.kind in {'created', 'sources_changed'} and isinstance(source, Shipment) and source.purchase_order_id:
+        # Carry the parent's enabled dispatch rules into each batch, even if a colleague creates the shipment.
+        inherited = db.scalars(select(TaskRule).where(TaskRule.enabled.is_(True), TaskRule.id.in_(
+            select(Task.rule_id).where(Task.source_kind == 'purchase', Task.source_id.in_([order.id for order in source.purchases]),
+                                       Task.action_kind == 'dispatch', Task.status == 'pending')))).all()
+        materialize(db, source, 'shipment', inherited, aware(event.created_at), moment)
     reconcile(db, source, event.source_kind, moment, progress_at=aware(event.created_at) if event.kind == 'production' else None)
     event.processed_at = moment
     return True

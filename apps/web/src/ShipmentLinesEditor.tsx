@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Col, Form, Input, Modal, Row, Select } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import { api, errorText } from './api';
 import { ErrorNotice } from './common';
 import { QuantityInput, RemoteSelect, requestId, required } from './SupplyShared';
 import { cartonText } from './packing';
-import { useShipmentPurchases } from './ShipmentPurchases';
+import { PurchaseMultiSelect, useShipmentPurchases } from './ShipmentPurchases';
 import type { Shipment } from './supply-types';
 
-interface Values { reason?: string; lines: { purchase_line_id?: string | null; product_id: string; quantity: number; units_per_carton: number | null }[] }
+interface Values { purchase_order_ids?: string[]; reason?: string; lines: { purchase_line_id?: string | null; product_id: string; quantity: number; units_per_carton: number | null }[] }
 
 export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: Shipment; onClose: () => void; onSaved: () => void }) {
   const [form] = Form.useForm<Values>();
@@ -16,8 +16,27 @@ export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const rows = Form.useWatch('lines', { form, preserve: true }) || [];
-  const purchase = useShipmentPurchases(shipment.purchase_order_ids);
-  const purchaseLines = purchase.orders.flatMap(order => order.lines.map(line => ({ ...line, purchase_number: order.number })));
+  const supplier = !!shipment.purchase_order_id;
+  const selectedIds = Form.useWatch('purchase_order_ids', form) ?? shipment.purchase_order_ids;
+  const purchase = useShipmentPurchases(supplier ? selectedIds : []);
+  const previousOrders = useRef(shipment.purchase_order_ids);
+  const lockedIds = shipment.purchase_orders.filter(order => shipment.lines.some(line => line.purchase_number === order.number && line.received_quantity > 0)).map(order => order.id);
+  const purchaseLines = purchase.orders.flatMap(order => order.lines.map(line => ({ ...line, purchase_number: order.number,
+    available_quantity: (line.unallocated_quantity ?? 0) + (shipment.lines.find(original => original.purchase_line_id === line.id)?.quantity ?? 0),
+  })).filter(line => line.available_quantity > 0));
+  useEffect(() => {
+    if (!supplier || purchase.loading || purchase.error) return;
+    const current: Values['lines'] = form.getFieldValue('lines') || [];
+    const allowed = new Set(purchase.orders.flatMap(order => order.lines.map(line => line.id)));
+    const retained = current.filter(line => line.purchase_line_id && allowed.has(line.purchase_line_id));
+    const added = purchase.orders.filter(order => !previousOrders.current.includes(order.id)).flatMap(order => order.lines.flatMap(line => {
+      const original = shipment.lines.find(item => item.purchase_line_id === line.id);
+      const quantity = (line.unallocated_quantity ?? 0) + (original?.quantity ?? 0);
+      return quantity > 0 ? [{ purchase_line_id: line.id, product_id: line.product_id, quantity, units_per_carton: original?.units_per_carton ?? line.units_per_carton }] : [];
+    }));
+    form.setFieldValue('lines', [...retained, ...added]);
+    previousOrders.current = purchase.orders.map(order => order.id);
+  }, [purchase.orders, purchase.loading, purchase.error, form, supplier, shipment.lines]);
   const changeProduct = (index: number, productId: string, size?: number | null, purchaseLineId?: string) => {
     form.setFieldValue(['lines', index, 'product_id'], productId);
     form.setFieldValue(['lines', index, 'units_per_carton'], shipment.lines.find(line => line.product_id === productId && (!purchaseLineId || line.purchase_line_id === purchaseLineId))?.units_per_carton ?? size ?? null);
@@ -25,13 +44,22 @@ export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: 
   return <Modal open title="修改发货产品及数量（不建议操作）" width={960} onCancel={saving ? undefined : onClose} closable={!saving} mask={{ closable: false }} onOk={() => form.submit()} confirmLoading={saving} okText="保存修改" okButtonProps={{ danger: true, disabled: !!shipment.purchase_order_id && (purchase.loading || !!purchase.error) }}>
     <Alert className="page-notice" type="warning" showIcon title="不建议操作：仅在确认发货记录有误时修改" description="保存会调整采购分配、库存占用或已发出数量，并写入跟进记录。已接收的商品不能移除或替换，数量不得低于已接收数。请核对实际发货和 Amazon 货件资料。" />
     <ErrorNotice error={error || purchase.error} />
-    <Form form={form} layout="vertical" initialValues={{ lines: shipment.lines.map(line => ({ purchase_line_id: line.purchase_line_id, product_id: line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton })) }} onFinish={async values => {
+    <Form form={form} layout="vertical" initialValues={{ purchase_order_ids: shipment.purchase_order_ids, lines: shipment.lines.map(line => ({ purchase_line_id: line.purchase_line_id, product_id: line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton })) }} onFinish={async values => {
+      if (supplier && (purchase.loading || purchase.error)) return;
       setSaving(true); setError('');
       try { await api(`/shipments/${shipment.id}/lines`, { method: 'PATCH', body: {
         request_id: token, expected_version: shipment.lines_version, reason: values.reason || '',
+        ...(supplier ? { purchase_order_ids: values.purchase_order_ids } : {}),
         lines: values.lines.map(line => ({ purchase_line_id: line.purchase_line_id, product_id: shipment.purchase_order_id ? purchaseLines.find(source => source.id === line.purchase_line_id)?.product_id : line.product_id, quantity: line.quantity, units_per_carton: line.units_per_carton })),
       } }); onSaved(); } catch (cause) { setError(errorText(cause)); } finally { setSaving(false); }
     }}>
+      <Row gutter={16}><Col span={12}><Form.Item label="所属店铺"><Input value={shipment.store_name} readOnly /></Form.Item></Col>
+        <Col span={12}><Form.Item label="发货来源"><Input value={supplier ? '供应商发货' : shipment.source_name} readOnly /></Form.Item></Col></Row>
+      <Row gutter={16}><Col span={12}>{supplier ? <Form.Item name="purchase_order_ids" label="采购单（可多选）" rules={required} extra={lockedIds.length ? '已有接收记录的采购单不可移除。' : '新增采购单会自动带入全部可发商品，取消选择会移除对应未接收商品。'}>
+        <PurchaseMultiSelect storeId={shipment.store_id} selectedOrders={[...shipment.purchase_orders, ...purchase.orders]} lockedIds={lockedIds} disabled={saving} />
+      </Form.Item> : <Form.Item label="发货仓库"><Input value={shipment.source_name} readOnly /></Form.Item>}</Col>
+        <Col span={12}><Form.Item label="目的仓库"><Input value={shipment.destination_name} readOnly /></Form.Item></Col></Row>
+      {supplier && <Alert className="page-notice" type="info" title={purchase.loading ? '正在载入采购商品…' : `已选择 ${selectedIds.length} 个采购单；原有商品数量保留，新增采购单默认带入全部可发商品。`} />}
       <Form.List name="lines" rules={[{ validator: async (_, lines) => { if (!lines?.length) throw new Error('至少保留一行商品'); } }]}>{(fields, { add, remove }, { errors }) => <>
         {fields.map(field => {
           const row = rows[field.name];
@@ -39,7 +67,7 @@ export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: 
           const received = original?.received_quantity || 0;
           return <Row key={field.key} gutter={12} align="top">
             <Col span={11}><Form.Item name={[field.name, shipment.purchase_order_id ? 'purchase_line_id' : 'product_id']} label="发货产品 / SKU" rules={required}>
-              {shipment.purchase_order_id ? <Select showSearch optionFilterProp="label" disabled={received > 0 || (purchase.loading || !!purchase.error)} loading={purchase.loading} options={purchaseLines.map(line => ({ value: line.id, label: `${line.purchase_number} · ${line.internal_sku} · ${line.product_name_zh || line.product_name}` }))} onChange={id => { const line = purchaseLines.find(line => line.id === id); if (line) changeProduct(field.name, line.product_id, line.units_per_carton, line.id); }} /> : <RemoteSelect path="/products?is_active=true" disabled={received > 0} selectedLabel={original ? `${original.internal_sku} · ${original.product_name}` : undefined} onRecord={product => changeProduct(field.name, product.id, product.units_per_carton)} />}
+              {shipment.purchase_order_id ? <Select showSearch optionFilterProp="label" disabled={received > 0 || (purchase.loading || !!purchase.error)} loading={purchase.loading} options={purchaseLines.map(line => ({ value: line.id, label: `${line.purchase_number} · ${line.internal_sku} · ${line.product_name_zh || line.product_name}（本单最多 ${line.available_quantity}）` }))} onChange={id => { const line = purchaseLines.find(line => line.id === id); if (line) changeProduct(field.name, line.product_id, line.units_per_carton, line.id); }} /> : <RemoteSelect path="/products?is_active=true" disabled={received > 0} selectedLabel={original ? `${original.internal_sku} · ${original.product_name}` : undefined} onRecord={product => changeProduct(field.name, product.id, product.units_per_carton)} />}
             </Form.Item></Col>
             <Col span={5}><Form.Item name={[field.name, 'units_per_carton']} label="箱规（件/箱）" rules={required}><QuantityInput /></Form.Item></Col>
             <Col span={6}><Form.Item name={[field.name, 'quantity']} label="本批数量" dependencies={[[ 'lines', field.name, 'units_per_carton' ]]} extra={<>已接收 {received} 件；{cartonText(row?.quantity || 0, row?.units_per_carton)}</>} rules={[...required, { validator: async (_, value) => {
@@ -50,7 +78,7 @@ export function ShipmentLinesEditor({ shipment, onClose, onSaved }: { shipment: 
             <Col span={2}><Button aria-label="移除发货商品行" type="text" disabled={received > 0} icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} /></Col>
           </Row>;
         })}
-        <Form.ErrorList errors={errors} /><Button block type="dashed" icon={<PlusOutlined />} disabled={fields.length >= 1000} onClick={() => add({ quantity: 1 })}>添加发货产品</Button>
+        <Form.ErrorList errors={errors} /><Button block type="dashed" icon={<PlusOutlined />} disabled={fields.length >= 1000 || (supplier && purchase.loading)} onClick={() => add({ quantity: 1 })}>添加发货产品</Button>
       </>}</Form.List>
       <Form.Item name="reason" label="修改说明" style={{ marginTop: 20 }}><Input.TextArea rows={2} maxLength={1000} placeholder="说明实际发货与原记录的差异，供后续跟进核对" /></Form.Item>
     </Form>

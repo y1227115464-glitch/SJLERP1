@@ -23,15 +23,15 @@ export function useShipmentPurchases(ids: string[]) {
   return state.key === key ? state : { key, orders: emptyOrders, loading: ids.length > 0, error: '' };
 }
 
-export function PurchaseMultiSelect({ storeId, value = [], onChange, selectedOrders }: {
-  storeId?: string; value?: string[]; onChange?: (ids: string[]) => void; selectedOrders: { id: string; number: string }[];
+export function PurchaseMultiSelect({ storeId, value = [], onChange, selectedOrders, lockedIds = [], disabled = false }: {
+  lockedIds?: string[]; disabled?: boolean; storeId?: string; value?: string[]; onChange?: (ids: string[]) => void; selectedOrders: { id: string; number: string }[];
 }) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const q = useDebouncedValue(search);
   const resource = useResource<ListResult<PurchaseOrder>>(open && storeId ? `/purchase-orders?store_id=${storeId}&shippable=true&limit=100&q=${encodeURIComponent(q)}` : null);
-  const options = [...new Map([...selectedOrders, ...(resource.data?.items ?? [])].map(order => [order.id, { value: order.id, label: order.number }])).values()];
-  return <Select mode="multiple" value={value} onChange={onChange} disabled={!storeId} maxCount={100}
+  const options = [...new Map([...selectedOrders, ...(resource.data?.items ?? [])].map(order => [order.id, { value: order.id, label: order.number, disabled: lockedIds.includes(order.id) }])).values()];
+  return <Select mode="multiple" value={value} onChange={ids => onChange?.([...new Set([...lockedIds, ...ids])])} disabled={disabled || !storeId} maxCount={100}
     showSearch={{ filterOption: false, onSearch: setSearch }} onOpenChange={setOpen} options={options}
     placeholder="选择一个或多个采购单，自动带入全部可发商品" loading={resource.loading}
     notFoundContent={resource.error ? <Alert type="error" title={resource.error} /> : resource.loading ? '加载中…' : '没有可发货采购单'} />;

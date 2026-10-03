@@ -148,16 +148,16 @@ def shipment_detail(db, shipment):
     return result
 
 
-def locked_shipment(db, identifier, user):
+def locked_shipment(db, identifier, user, *, additional_purchase_ids=()):
     # All supplier actions lock PO before shipment to keep receipt/allocation lock order identical.
     row = db.execute(scoped(select(Shipment.id, Shipment.purchase_order_id).where(Shipment.id == identifier), user, Shipment.store_id)).first()
     if row is None:
         fail(404, 'not_found', '货件不存在或无权访问')
     ids = db.scalars(select(shipment_purchases.c.purchase_order_id).where(shipment_purchases.c.shipment_id == identifier)).all()
-    purchases = [scoped_record(db, PurchaseOrder, parent_id, user, lock=True) for parent_id in sorted(ids)]
+    purchases = [scoped_record(db, PurchaseOrder, parent_id, user, lock=True) for parent_id in sorted(set(ids) | set(additional_purchase_ids))]
     record = scoped_record(db, Shipment, identifier, user, lock=True)
     if {order.id for order in record.purchases} != set(ids):
-        fail(409, 'shipment_sources_changed', '货件刚刚合并，来源采购单已变化，请刷新重试')
+        fail(409, 'shipment_sources_changed', '货件来源采购单已变化，请刷新重试')
     return record, purchases
 
 
