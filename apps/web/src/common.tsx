@@ -37,7 +37,7 @@ export async function fetchAll<T>(path: string): Promise<T[]> {
   const items: T[] = [];
   let total = 1;
   while (items.length < total) {
-    const result = await api<ListResult<T>>(`${path}?limit=200&offset=${items.length}`);
+    const result = await api<ListResult<T>>(`${path}${path.includes('?') ? '&' : '?'}limit=200&offset=${items.length}`);
     items.push(...result.items);
     total = result.total;
     if (!result.items.length) break;

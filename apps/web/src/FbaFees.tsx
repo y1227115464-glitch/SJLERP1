@@ -5,14 +5,15 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { api, errorText } from './api';
 import { ErrorNotice, PageHeading, usePagedList } from './common';
-import { queryPath } from './CatalogShared';
+import { queryPath, useCatalogOptions } from './CatalogShared';
 import type { Store, User } from './types';
 
 type Fee = { id: string; store_id: string | null; sku: string; effective_from: string; effective_until: string | null;
   low_price_fee: string; high_price_fee: string; source: string; revision: number };
 type FeeProduct = { sku: string; current: Fee | null; legacy_fee: string | null; version_count: number; scheduled_count: number;
   deletable_versions: Record<string, number> };
-type FeeForm = { store_id: string; sku: string; effective_from: Dayjs; low_price_fee: string; high_price_fee: string; source: string };
+type FeeForm = { sku: string; effective_from: Dayjs; low_price_fee: string; high_price_fee: string; source: string };
+type FeeSkuOption = { sku: string; name: string; is_active: boolean; store_id: string; store_name: string };
 type Editor = { original?: Fee; sku?: string; copy?: Fee };
 type Props = { user: User; stores: Store[]; selectedStore: string; sku?: string; onChanged?: () => void };
 const usd = (value: string) => `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 9 })}`;
@@ -36,6 +37,10 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
   const [revision, setRevision] = useState(0);
   const [form] = Form.useForm<FeeForm>();
   const scope = selectedStore === 'all' ? undefined : selectedStore;
+  const skuOptions = useCatalogOptions<FeeSkuOption>(editor && !editor.original
+    ? queryPath('/sales-analysis/fba-fees/sku-options', { store_id: scope }) : null);
+  const chosenSku = Form.useWatch('sku', form);
+  const chosenProduct = skuOptions.data.find(item => item.sku === chosenSku);
   const list = usePagedList<FeeProduct>(queryPath('/sales-analysis/fba-fees/catalog', {
     store_id: scope, q: search, as_of: asOf.format('YYYY-MM-DD'), is_active: active === 'all' ? undefined : active,
   }));
@@ -45,7 +50,6 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
     const base = next.original || next.copy;
     form.resetFields();
     form.setFieldsValue({ sku: next.sku || base?.sku || '',
-      store_id: next.original ? next.original.store_id || '*' : next.copy?.store_id || scope || (user.role === 'admin' ? '*' : undefined),
       effective_from: next.original ? dayjs(next.original.effective_from) :
         base && !dayjs(base.effective_from).isBefore(dayjs(), 'day') ? dayjs(base.effective_from).add(1, 'day') : dayjs(),
       low_price_fee: base?.low_price_fee, high_price_fee: base?.high_price_fee, source: base?.source || '',
@@ -55,8 +59,8 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
   const save = async (values: FeeForm) => {
     setSaving(true);
     try {
-      await api('/sales-analysis/fba-fees', { method: 'POST', body: { ...values,
-        store_id: values.store_id === '*' ? null : values.store_id, sku: values.sku.trim(),
+      await api(editor?.original ? '/sales-analysis/fba-fees' : '/sales-analysis/fba-fees/by-sku', { method: 'POST', body: { ...values,
+        ...(editor?.original ? { store_id: editor.original.store_id } : {}), sku: values.sku.trim(),
         effective_from: values.effective_from.format('YYYY-MM-DD'), revision: editor?.original?.revision || 0,
       } });
       setEditor(null); setRevision(value => value + 1); list.reload(); onChanged?.();
@@ -90,7 +94,7 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
         <Button icon={<ReloadOutlined />} onClick={list.reload}>刷新</Button>
         {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor({})}>新增物流费</Button>}
       </Space>
-      <p className="table-subtext">{scope ? '显示所选店铺在查看日期适用的费用，店铺专用版本优先于通用版本。' : '当前显示通用费用；选择顶部店铺可查看专用费用。'} 商品状态按精确 SKU 匹配商品档案；未建档的 SKU 可切换至“全部”查看。未录入双档费用的历史日期仍沿用原单档费用。</p>
+      <p className="table-subtext">{scope ? '显示所选店铺在查看日期适用的费用，店铺专用版本优先于通用版本。' : '按 SKU 归属店铺显示适用费用；没有店铺专用版本时沿用通用费用。'} 商品状态按精确 SKU 匹配商品档案；未建档的 SKU 可切换至“全部”查看。未录入双档费用的历史日期仍沿用原单档费用。</p>
       <ErrorNotice error={list.error} retry={list.reload} />
       <Table<FeeProduct> rowKey="sku" loading={list.loading} dataSource={list.data?.items ?? []} pagination={list.pagination} scroll={{ x: 1100 }} columns={[
         { title: 'SKU', dataIndex: 'sku', width: 210, fixed: 'left' },
@@ -121,17 +125,27 @@ export function FbaFees({ user, stores, selectedStore, sku, onChanged }: Props) 
       onCopy={copy => openEditor({ copy })} onDeleted={() => { list.reload(); onChanged?.(); }} />}
     <Modal open={editor !== null} title={editor?.original ? '修正物流费版本' : '新增物流费版本'} onCancel={() => !saving && setEditor(null)} footer={null} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={save}>
-        <Form.Item label="适用范围" name="store_id" rules={[{ required: true }]}><Select disabled={!!editor?.original} options={[
-          ...(user.role === 'admin' ? [{ value: '*', label: '通用 · 所有店铺' }] : []), ...stores.map(store => ({ value: store.id, label: store.name })),
-        ]} /></Form.Item>
-        <Form.Item label="SKU（精确匹配）" name="sku" rules={[{ required: true, whitespace: true }]}><Input maxLength={120} disabled={!!(editor?.original || editor?.sku || editor?.copy)} /></Form.Item>
+        <ErrorNotice error={skuOptions.error} />
+        <Form.Item label="SKU" name="sku" rules={[{ required: true, message: '请选择 SKU' }]}>
+          {editor?.original ? <Input disabled /> : <Select aria-label="选择物流费 SKU" showSearch optionFilterProp="label"
+            placeholder="搜索并选择 SKU" loading={skuOptions.loading} disabled={!!(editor?.sku || editor?.copy)}
+            options={skuOptions.data.map(item => ({ value: item.sku,
+              label: `${item.sku} · ${item.store_name} · ${item.name}${item.is_active ? '' : '（已停用）'}` }))} />}
+        </Form.Item>
+        <Form.Item label={editor?.original ? '原版本适用范围' : '所属店铺'}>
+          <Input aria-label="物流费所属店铺" readOnly value={editor?.original ? scopeName(editor.original.store_id) : chosenProduct?.store_name || ''}
+            placeholder="选择 SKU 后自动确定" />
+        </Form.Item>
+        {!editor?.original && !skuOptions.loading && !skuOptions.error && (chosenSku && !chosenProduct || !skuOptions.data.length) &&
+          <Alert type="warning" showIcon title="暂无对应的可选 SKU" description="请核对商品品牌与店铺品牌的一对一绑定，以及当前店铺筛选和访问权限。" style={{ marginBottom: 16 }} />}
         <Form.Item label="生效日期" name="effective_from" rules={[{ required: true }]} extra={editor?.original ? '修正将重算该版本适用期间；新的调价请使用“新增调价”。' : '包含当天，旧版本自动截至前一天；可提前录入未来生效的价格。'}>
           <DatePicker aria-label="物流费版本生效日期" allowClear={false} disabled={!!editor?.original} />
         </Form.Item>
         <Form.Item label="售价 ≤ $9.99：单件物流费 USD" name="low_price_fee" rules={[{ required: true, message: '请填写低价档单件费用' }]}><InputNumber aria-label="低价档单件物流费" stringMode min="0" max="999999999" precision={9} style={{ width: '100%' }} /></Form.Item>
         <Form.Item label="售价 > $9.99：单件物流费 USD" name="high_price_fee" rules={[{ required: true, message: '请填写高价档单件费用' }]}><InputNumber aria-label="高价档单件物流费" stringMode min="0" max="999999999" precision={9} style={{ width: '100%' }} /></Form.Item>
         <Form.Item label="来源 / 备注" name="source"><Input.TextArea maxLength={500} rows={2} /></Form.Item>
-        <Button type="primary" htmlType="submit" loading={saving}>保存物流费</Button>
+        <Button type="primary" htmlType="submit" loading={saving}
+          disabled={!editor?.original && (skuOptions.loading || !!skuOptions.error || !chosenProduct)}>保存物流费</Button>
       </Form>
     </Modal>
   </>;

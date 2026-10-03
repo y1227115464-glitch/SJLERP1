@@ -408,3 +408,81 @@ def test_postgres_concurrent_fee_delete_and_edit(system):
             return result.status_code
     with ThreadPoolExecutor(2) as pool:
         assert sorted(pool.map(run, ['delete', 'edit'])) == [200, 409]
+
+
+def owned_products(system):
+    from app.models import Product, Store
+    with system['app'].state.database.session() as db:
+        db.get(Store, system['ids']['a']).brand = 'BRAND-A'
+        db.get(Store, system['ids']['b']).brand = 'BRAND-B'
+        db.add_all([Product(internal_sku='SKU-A', name='甲商品', brand='BRAND-A'),
+                    Product(internal_sku='SKU-B', name='乙商品', brand='BRAND-B'),
+                    Product(internal_sku='OFF-B', name='停用乙商品', brand='BRAND-B', is_active=False),
+                    Product(internal_sku='UNASSIGNED', name='未归属', brand=''),
+                    Product(internal_sku='UNMATCHED', name='无对应店铺', brand='UNKNOWN')])
+        db.commit()
+
+
+def test_fee_sku_options_follow_brand_ownership_and_authorization(system):
+    c = system['client']; h = login(c)
+    owned_products(system)
+    endpoint = '/api/v1/sales-analysis/fba-fees/sku-options'
+    result = c.get(endpoint, headers=h, params={'limit': 1, 'offset': 1}).json()
+    assert result['total'] == 3 and result['items'][0]['sku'] == 'SKU-A'
+    rows = c.get(endpoint, headers=h, params={'store_id': system['ids']['b']}).json()['items']
+    assert [row['sku'] for row in rows] == ['OFF-B', 'SKU-B']
+    assert all(row['store_id'] == system['ids']['b'] and row['store_name'] == '测试乙店' for row in rows)
+    assert rows[0]['is_active'] is False
+    clear_sku(c, h, catalog(c, h, q='SKU-A')['items'][0])
+    assert c.get(endpoint, headers=h).json()['total'] == 3
+    fin = login(c, 'finance')
+    assert c.get(endpoint, headers=fin).json()['total'] == 2
+    assert c.get(endpoint, headers=fin, params={'store_id': system['ids']['a']}).status_code == 404
+    op = login(c, 'operator')
+    assert c.get(endpoint, headers=op).status_code == 403
+
+
+def test_save_fee_by_sku_assigns_owner_and_all_store_catalog_shows_it(system):
+    c = system['client']; h = login(c)
+    owned_products(system)
+    payload = {'sku': 'SKU-A', 'effective_from': '2025-09-26', 'low_price_fee': '2', 'high_price_fee': '4'}
+    endpoint = '/api/v1/sales-analysis/fba-fees/by-sku'
+    clear_sku(c, h, catalog(c, h, q='SKU-A')['items'][0])
+    result = c.post(endpoint, headers=h, json=payload)
+    assert result.status_code == 200, result.text
+    saved = result.json()
+    assert saved['store_id'] == system['ids']['a']
+    assert catalog(c, h, q='SKU-A')['items'][0]['current']['id'] == saved['id']
+    assert c.post(endpoint, headers=h, json=payload).status_code == 409
+    assert c.post(endpoint, headers=h, json={**payload, 'store_id': None}).status_code == 422
+    assert c.post(endpoint, headers=h, json={**payload, 'store_id': system['ids']['b']}).status_code == 422
+    assert c.post(endpoint, headers={}, json=payload).status_code == 403
+    fin = login(c, 'finance')
+    assert c.post(endpoint, headers=fin, json=payload).status_code == 422
+    assert c.post(endpoint, headers=fin, json={**payload, 'sku': 'SKU-B'}).json()['store_id'] == system['ids']['b']
+    op = login(c, 'operator')
+    assert c.post(endpoint, headers=op, json=payload).status_code == 403
+
+
+def test_sku_owner_validation_rechecks_changed_brand_and_inactive_store(system):
+    from app.models import Store
+    c = system['client']; h = login(c)
+    owned_products(system)
+    payload = {'sku': 'SKU-A', 'effective_from': '2025-09-26', 'low_price_fee': '2', 'high_price_fee': '4'}
+    endpoint = '/api/v1/sales-analysis/fba-fees/by-sku'
+    for sku in ['UNKNOWN', 'UNASSIGNED', 'UNMATCHED']:
+        assert c.post(endpoint, headers=h, json={**payload, 'sku': sku}).status_code == 422
+    with system['app'].state.database.session() as db:
+        db.get(Store, system['ids']['b']).brand = 'BRAND-A'
+        db.commit()
+    fin = login(c, 'finance')
+    assert c.get('/api/v1/sales-analysis/fba-fees/sku-options', headers=fin).json()['total'] == 0
+    assert c.post(endpoint, headers=fin, json=payload).status_code == 422
+    h = login(c)
+    with system['app'].state.database.session() as db:
+        db.get(Store, system['ids']['b']).brand = 'BRAND-B'
+        db.get(Store, system['ids']['a']).is_active = False
+        db.commit()
+    assert c.post(endpoint, headers=h, json=payload).status_code == 422
+    rows = c.get('/api/v1/sales-analysis/fba-fees/sku-options', headers=h).json()['items']
+    assert all(row['store_id'] == system['ids']['b'] for row in rows)

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.api import DB, Page, audit, fail, require_store, store_filter
 from app.core.security import has_permission
 from app.models import Base, Product, Store, new_id
+from app.product_scope import store_condition
 from app.reports.costs import Money, Reader, SalesCostRate, router, visible_rates
 from app.reports.models import AdRecord, SalesRecord
 from app.reports.sku import normalized_sku
@@ -37,8 +38,7 @@ class FbaFeeRate(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
-class FbaFeeInput(Input):
-    store_id: str | None = Field(default=None, max_length=36)
+class FbaSkuFeeInput(Input):
     sku: str = Field(min_length=1, max_length=120, pattern=r'^[^\x00-\x1f\x7f]+$')
     effective_from: date
     low_price_fee: Money
@@ -53,6 +53,10 @@ class FbaFeeInput(Input):
         if not value:
             raise ValueError('SKU 不能为空')
         return value
+
+
+class FbaFeeInput(FbaSkuFeeInput):
+    store_id: str | None = Field(default=None, max_length=36)
 
 
 class FbaCatalogDeletion(Base):
@@ -116,6 +120,37 @@ def applicable(rows, store_id, day):
     return None
 
 
+def owned_fee_products(user, store_id=None):
+    query = select(Product, Store).join(Store, Store.brand == Product.brand).where(store_condition(Store.id))
+    if user.role != 'admin':
+        query = query.where(store_filter(user, Store.id))
+    if store_id:
+        query = query.where(Store.id == store_id)
+    return query
+
+
+@router.get('/fba-fees/sku-options')
+def fee_sku_options(db: DB, user: Reader, page: Page, store_id: str | None = None):
+    if store_id:
+        require_store(db, user, store_id)
+    query = owned_fee_products(user, store_id).where(Store.is_active.is_(True))
+    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    rows = db.execute(query.order_by(Product.internal_sku).limit(page.limit).offset(page.offset)).all()
+    return {'items': [{'sku': product.internal_sku, 'name': product.name, 'is_active': product.is_active,
+        'store_id': store.id, 'store_name': store.name} for product, store in rows], 'total': total}
+
+
+@router.post('/fba-fees/by-sku')
+def save_sku_fee(payload: FbaSkuFeeInput, db: DB, user: Reader):
+    if not has_permission(user, 'quotes.manage'):
+        fail(403, 'permission_denied', '无权维护物流费')
+    owner = db.execute(owned_fee_products(user).where(Product.internal_sku == payload.sku,
+        Store.is_active.is_(True))).first()
+    if owner is None:
+        fail(422, 'sku_store_unavailable', '该 SKU 未对应唯一的授权启用店铺，请核对商品品牌与店铺品牌')
+    return save_fee(FbaFeeInput(**payload.model_dump(), store_id=owner[1].id), db, user)
+
+
 @router.get('/fba-fees')
 def fees(db: DB, user: Reader, page: Page, store_id: str | None = None, sku: str = Query('', max_length=120)):
     if store_id:
@@ -166,6 +201,8 @@ def fee_catalog(db: DB, user: Reader, page: Page, store_id: str | None = None,
         query = query.where(catalog.c.sku.in_(select(Product.internal_sku).where(Product.is_active == is_active)))
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     skus = db.scalars(query.order_by(catalog.c.sku).limit(page.limit).offset(page.offset)).all()
+    owners = {product.internal_sku: store.id for product, store in db.execute(
+        owned_fee_products(user, store_id).where(Product.internal_sku.in_(skus)))}
     rates = defaultdict(list)
     for row in db.scalars(visible_fba_rates(user, store_id).where(FbaFeeRate.sku.in_(skus))):
         rates[row.sku].append(row)
@@ -174,8 +211,9 @@ def fee_catalog(db: DB, user: Reader, page: Page, store_id: str | None = None,
         legacy[row.sku].append(row)
     items = []
     for sku in skus:
-        current = applicable(rates[sku], store_id, as_of)
-        old = applicable(legacy[normalized_sku(sku)], store_id, as_of) if current is None else None
+        fee_store = store_id or owners.get(sku)
+        current = applicable(rates[sku], fee_store, as_of)
+        old = applicable(legacy[normalized_sku(sku)], fee_store, as_of) if current is None else None
         versions = fee_versions(rates[sku])
         items.append({'sku': sku, 'current': next((row for row in versions if current and row['id'] == current.id), None),
             'legacy_fee': format(old.fba_fee, 'f') if old and old.fba_fee is not None else None,
