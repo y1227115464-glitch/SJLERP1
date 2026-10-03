@@ -1,5 +1,17 @@
 interface SourceQuantity { product_id: string; quantity: number; supplier_stock_id?: string | null }
 
+// The API includes stock provenance in purchase_orders. Only direct purchase
+// allocations belong in the editable purchase selector and its grid columns.
+export function editableShipmentPurchaseIds(shipment: {
+  purchase_orders: { id: string; number: string }[];
+  lines: { purchase_number: string | null; supplier_stock_id: string | null }[];
+}) {
+  return shipment.purchase_orders.filter(order => {
+    const lines = shipment.lines.filter(line => line.purchase_number === order.number);
+    return !lines.length || lines.some(line => !line.supplier_stock_id);
+  }).map(order => order.id);
+}
+
 export function groupShipmentRows<T extends SourceQuantity>(lines: T[]) {
   const groups = new Map<string, { productId: string; indices: number[]; total: number; stockTotal: number }>();
   lines.forEach((line, index) => {

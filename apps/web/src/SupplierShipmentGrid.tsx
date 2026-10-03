@@ -93,7 +93,7 @@ export function SupplierShipmentGrid({ form, storeId, purchaseLines, purchaseOrd
           { title: '', width: 48, render: (_, group) => <Button type="text" aria-label="移除 SKU" disabled={group.indices.some(index => (original(index)?.received_quantity || 0) > 0)} icon={<MinusCircleOutlined />} onClick={() => remove(group.indices)} /> },
         ]} />
       <Form.ErrorList errors={errors} />
-      <p className="catalog-field-help">共计自动汇总各来源数量。填 0 可取消该来源；供应商库存按批次扣减，多批次在同一列内分别填写。</p>
+      <p className="catalog-field-help">共计自动汇总各来源数量。填 0 可取消该来源；供应商库存按批次扣减，悬停批次可查看原采购单。只要保留该批库存数量，货件就会保留其采购来源用于追溯。</p>
       <Button block type="dashed" icon={<PlusOutlined />} disabled={!storeId || fields.length >= 1000 || loading} onClick={() => setPicking(true)}>从供应商库存添加 SKU</Button>
       {picking && storeId && <StockPicker key={storeId} storeId={storeId} selected={rows.flatMap(row => row.supplier_stock_id ? [row.supplier_stock_id] : [])} onAdd={line => {
         const sameProduct = rows.filter(row => row.product_id === line.product_id);

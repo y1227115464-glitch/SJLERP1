@@ -125,6 +125,31 @@ def test_amend_add_stock_from_closed_order_then_remove(system):
     assert stock_list(client)['items'][0]['remaining_quantity'] == 20
 
 
+def test_edit_purchase_selection_excludes_stock_provenance_without_losing_stock(system):
+    client, headers, product, order, stock = prepare(system)
+    other = purchase(system, client, headers, product, {'id': stock['supplier_id']}, 10)
+    normal = {'product_id': product['id'], 'purchase_line_id': other['lines'][0]['id'], 'quantity': 10}
+    lines = [normal, item(product, stock, 10)]
+    record = create(client, headers, other, lines, purchase_order_ids=[other['id']])
+    original_lines = record['lines']
+    for _ in range(2):
+        record = amend(client, headers, record, lines, purchase_order_ids=[other['id']])
+        record = client.get(f"/api/v1/shipments/{record['id']}").json()
+        assert set(record['purchase_order_ids']) == {order['id'], other['id']}
+        assert record['lines'] == original_lines
+        assert stock_list(client)['items'][0]['remaining_quantity'] == 10
+    # Removing only the direct allocation leaves a valid stock-only shipment.
+    record = amend(client, headers, record, [item(product, stock, 10)], purchase_order_ids=[])
+    assert record['purchase_order_ids'] == [order['id']]
+    assert current(client, other)['lines'][0]['unallocated_quantity'] == 10
+    record = post(client, f"/shipments/{record['id']}/dispatch", headers, {}, 200)
+    record = post(client, f"/shipments/{record['id']}/receive", headers,
+                  {'request_id': str(uuid4()), 'lines': [{'line_id': record['lines'][0]['id'], 'quantity': 5}]}, 200)
+    record = amend(client, headers, record, [item(product, stock, 10)], purchase_order_ids=[])
+    assert record['lines'][0]['received_quantity'] == 5
+    assert record['purchase_order_ids'] == [order['id']]
+
+
 def test_concurrent_stock_shipments_do_not_overallocate(system):
     import pytest
     from concurrent.futures import ThreadPoolExecutor

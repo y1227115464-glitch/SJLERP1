@@ -1,6 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupShipmentRows, allocatedShipmentRows } from '../src/shipment-grid.ts';
+import { groupShipmentRows, allocatedShipmentRows, editableShipmentPurchaseIds } from '../src/shipment-grid.ts';
+
+test('重新打开混合发货时，库存追溯采购单不恢复为采购余量选项', () => {
+  const shipment = {
+    purchase_orders: [{ id: 'a', number: 'PO-A' }, { id: 'b', number: 'PO-B' }, { id: 'c', number: 'PO-C' }],
+    lines: [
+      { purchase_number: 'PO-A', supplier_stock_id: null },
+      { purchase_number: 'PO-A', supplier_stock_id: 'stock-a' },
+      { purchase_number: 'PO-B', supplier_stock_id: 'stock-b', received_quantity: 5 },
+    ],
+  };
+  assert.deepEqual(editableShipmentPurchaseIds(shipment), ['a', 'c']);
+  assert.equal(shipment.lines.length, 3);
+  assert.deepEqual(editableShipmentPurchaseIds({ ...shipment, lines: shipment.lines.filter(line => line.supplier_stock_id) }), ['c']);
+  assert.deepEqual(editableShipmentPurchaseIds({ purchase_orders: [], lines: [] }), []);
+});
 
 test('同一 SKU 跨采购单和多个库存批次合并，保留来源索引并分别汇总', () => {
   const rows = [
