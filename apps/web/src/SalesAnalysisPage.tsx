@@ -171,7 +171,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' },
     ]} />}>
       <Table<SalesAnalysisRow> rowKey="key" className="sales-analysis-table" loading={resource.loading} dataSource={data?.items ?? []} columns={columns}
-        scroll={{ x: 1683, y: 'min(60vh, 640px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
+        scroll={{ x: 1683, y: 'min(80vh, 853px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
           showTotal: total => `共 ${total} 个店铺 SKU`, onChange: page => setCursor({ path, page }) }}
         expandable={{ fixed: 'left', columnWidth: 48, expandedRowRender: row => <SkuPeriods key={`${row.key}:${dates.start}:${dates.end}:${refreshVersion}`}
           row={row} dates={dates} orderScope={orderScope} cad={cad} mxn={mxn} columns={columns}
