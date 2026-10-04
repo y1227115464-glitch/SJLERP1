@@ -14,6 +14,7 @@ import { reportDateRange, type ReportDateRange } from './report-date-ranges';
 import type { SalesAnalysis, SalesAnalysisRow, SalesAnalysisPeriod, SalesAnalysisPeriods } from './sales-analysis-types';
 import { defaultSalesGranularity, type SalesGranularity } from './sales-analysis-periods';
 import type { Store, User } from './types';
+import { readSalesDates, saveSalesDates } from './filter-preferences';
 
 const money = (value: string | null | undefined) => value == null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
 const percent = (value: string | null | undefined) => value == null ? '—' : `${(Number(value) * 100).toFixed(2)}%`;
@@ -72,9 +73,10 @@ export function SalesAnalysisPage({ user, stores, selectedStore, onImport }: {
 
 function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]; selectedStore: string }) {
   const [search, setSearch] = useState<ReportSearchValue>({ q: '', sku: '' });
-  const [dates, setDates] = useState<ReportDateRange>(() => ({
+  const [dates, setDates] = useState<ReportDateRange>(() => readSalesDates() ?? ({
     ...reportDateRange('last7', new Date(), false, SALES_UTC_OFFSET_MINUTES), preset: 'last7',
   }));
+  useEffect(() => { saveSalesDates(dates); }, [dates]);
   const [orderScope, setOrderScope] = useState('non_cancelled');
   const [sort, setSort] = useState('sku');
   const [cad, setCad] = useState(1.36);

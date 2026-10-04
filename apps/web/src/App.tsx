@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { api, errorText, setCsrfToken } from './api';
 import { fetchAll, LoadingScreen, roleLabels } from './common';
 import type { Store, User } from './types';
+import { readSelectedStore, saveSelectedStore } from './filter-preferences';
 const WorkspacePage = lazy(() => import('./WorkspacePage').then(module => ({ default: module.WorkspacePage })));
 const StoresPage = lazy(() => import('./ManagementPages').then(module => ({ default: module.StoresPage })));
 const UsersPage = lazy(() => import('./ManagementPages').then(module => ({ default: module.UsersPage })));
@@ -35,7 +36,7 @@ export default function App() {
   const storeRequest = useRef(0);
   const [stores, setStores] = useState<Store[]>([]);
   const [storeError, setStoreError] = useState('');
-  const [selectedStore, setSelectedStore] = useState<string>('all');
+  const [selectedStore, setSelectedStore] = useState<string>(() => readSelectedStore() || new URLSearchParams(location.hash.split('?')[1] || '').get('store') || 'all');
   const [collapsed, setCollapsed] = useState(false);
   const [page, setPage] = useState<Page>(initialPage);
   const [unread, setUnread] = useState(0);
@@ -45,10 +46,11 @@ export default function App() {
   const navigate = (next: Page) => { setPage(next); location.hash = next; };
   useEffect(() => {
     const update = () => { setPage(initialPage()); const store = new URLSearchParams(location.hash.split('?')[1] || '').get('store'); if (store) setSelectedStore(store); };
-    update();
+    setPage(initialPage());
     window.addEventListener('hashchange', update);
     return () => window.removeEventListener('hashchange', update);
   }, []);
+  useEffect(() => { saveSelectedStore(selectedStore); }, [selectedStore]);
   useEffect(() => {
     const expire = () => { storeRequest.current += 1; setUser(null); setStores([]); setUnread(0); setAuthError('登录已过期或账号权限已变更，请重新登录。'); };
     window.addEventListener('sjlerp:unauthorized', expire);
