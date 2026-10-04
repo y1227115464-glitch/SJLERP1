@@ -164,3 +164,9 @@
 .shipment-order-number { max-width: 88px; font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
 .shipment-source-cell + .shipment-source-cell { margin-top: 10px; }
 .shipment-total { display: block; padding-top: 4px; font-size: 16px; color: #304863; }
+
+.analysis-period-range { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-top: 12px; }
+.analysis-period-range .ant-input-number { width: 76px; }
+.analysis-period-legend { background: #e6f4ff; padding: 4px 8px; border-radius: 4px; }
+.analysis-periods .ant-table-tbody > tr.analysis-period-current > td,
+.analysis-periods .ant-table-tbody > tr.analysis-period-current:hover > td { background: #e6f4ff !important; }

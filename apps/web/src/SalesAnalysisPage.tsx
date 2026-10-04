@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import dayjs from 'dayjs';
 import { Alert, Button, Card, Checkbox, Col, InputNumber, Row, Segmented, Select, Statistic, Table, Tabs, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ImportOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
@@ -25,8 +26,12 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
   columns: ColumnsType<SalesAnalysisRow>; onCosts: () => void;
 }) {
   const [granularity, setGranularity] = useState<SalesGranularity>(() => defaultSalesGranularity(dates.start, dates.end));
+  const [extension, setExtension] = useState({ before: granularity === 'year' ? 0 : 1, after: granularity === 'year' ? 0 : 1 });
+  const unit = { day: '天', week: '周', month: '月', year: '年' }[granularity];
+  const start = dates.start ? dayjs(dates.start).subtract(extension.before, granularity).format('YYYY-MM-DD') : '';
+  const end = dates.end ? dayjs(dates.end).add(extension.after, granularity).format('YYYY-MM-DD') : '';
   const path = queryPath('/sales-analysis/periods', { store_id: row.store_id, sku: row.sku,
-    start_date: dates.start, end_date: dates.end, order_scope: orderScope,
+    start_date: start, end_date: end, order_scope: orderScope,
     cad_per_usd: String(cad), mxn_per_usd: String(mxn), granularity });
   const [cursor, setCursor] = useState({ path, page: 1 });
   const page = cursor.path === path ? cursor.page : 1;
@@ -40,13 +45,22 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
   ];
   return <div className="analysis-periods">
     <div className="analysis-period-toolbar"><strong>{row.store_name} · {row.sku}</strong>
-      <Segmented<SalesGranularity> aria-label="SKU 明细聚合方式" value={granularity} onChange={setGranularity} options={[
+      <Segmented<SalesGranularity> aria-label="SKU 明细聚合方式" value={granularity} onChange={value => { setGranularity(value); setExtension({ before: value === 'year' ? 0 : 1, after: value === 'year' ? 0 : 1 }); }} options={[
         { value: 'day', label: '按天' }, { value: 'week', label: '按周' }, { value: 'month', label: '按月' }, { value: 'year', label: '按年' },
       ]} />
     </div>
-    <p className="table-subtext">周按周一至周日，月和年按自然月、自然年汇总；首尾仅统计所选日期。各期间利润率按利润 ÷ 销售额重算，未导入广告日报的期间显示待确认。</p>
+    <div className="analysis-period-range">
+      <span>向前添加 <InputNumber aria-label={`向前添加${unit}`} min={0} max={100} precision={0} value={extension.before} disabled={!dates.start}
+        onChange={value => setExtension(previous => ({ ...previous, before: value ?? 0 }))} /> {unit}</span>
+      <span>向后添加 <InputNumber aria-label={`向后添加${unit}`} min={0} max={100} precision={0} value={extension.after} disabled={!dates.end}
+        onChange={value => setExtension(previous => ({ ...previous, after: value ?? 0 }))} /> {unit}</span>
+      <span>查看区间：{start || '最早日期'} ～ {end || '最新日期'}</span>
+      <span className="analysis-period-legend">当前分析时段：{dates.start || '最早日期'} ～ {dates.end || '最新日期'}</span>
+    </div>
+    <p className="table-subtext">浅蓝背景表示与当前分析时段重叠的期间；扩展区间仅影响本 SKU 明细。周按周一至周日，月和年按自然月、自然年汇总；首尾仅统计查看区间内的日期。各期间利润率按利润 ÷ 销售额重算，未导入广告日报的期间显示待确认。</p>
     <ErrorNotice error={resource.error} retry={resource.reload} />
     <Table<SalesAnalysisPeriod> rowKey="key" size="small" loading={resource.loading} columns={periodColumns}
+      rowClassName={item => (!dates.start || item.period_end >= dates.start) && (!dates.end || item.period_start <= dates.end) ? 'analysis-period-current' : ''}
       dataSource={resource.data?.items ?? []} scroll={{ x: 1655 }} pagination={{ current: page, pageSize: PAGE_SIZE,
         total: resource.data?.total ?? 0, showSizeChanger: false, hideOnSinglePage: true,
         showTotal: total => `共 ${total} 个期间`, onChange: page => setCursor({ path, page }) }} />
