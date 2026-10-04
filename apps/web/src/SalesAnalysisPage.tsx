@@ -106,7 +106,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
   const costCell = (value: string | null, row: SalesAnalysisRow) => value == null
     ? <Button type="link" size="small" onClick={() => setCosts({ sku: row.sku })}>待补充</Button> : money(value);
   const columns: ColumnsType<SalesAnalysisRow> = [
-    { title: '店铺 SKU', dataIndex: 'sku', fixed: 'left', width: 180, render: (value, row) => <div className="analysis-sku-cell">
+    { title: '店铺 SKU', dataIndex: 'sku', fixed: 'left', width: 200, render: (value, row) => <div className="analysis-sku-cell">
       <Tooltip title="勾选后计入合计"><Checkbox aria-label={`${row.store_name} ${row.sku} 计入合计`} checked={overrides.get(row.key) ?? row.issues.length === 0}
         onChange={event => toggleIncluded(row.key, event.target.checked)} /></Tooltip>
       <div><strong>{value}</strong>
@@ -154,7 +154,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' },
     ]} />}>
       <Table<SalesAnalysisRow> rowKey="key" className="sales-analysis-table" loading={resource.loading} dataSource={data?.items ?? []} columns={columns}
-        scroll={{ x: 1663, y: 'min(60vh, 640px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
+        scroll={{ x: 1683, y: 'min(60vh, 640px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
           showTotal: total => `共 ${total} 个店铺 SKU`, onChange: page => setCursor({ path, page }) }}
         expandable={{ fixed: 'left', columnWidth: 48, expandedRowRender: row => <SkuPeriods key={`${row.key}:${dates.start}:${dates.end}:${refreshVersion}`}
           row={row} dates={dates} orderScope={orderScope} cad={cad} mxn={mxn} columns={columns}
