@@ -5,9 +5,10 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from app.core.api import DB, Page, audit, fail, paginated, require
-from app.models import Product, User, new_id
+from app.models import Product, Store, User, new_id
 from app.supply.common import active_products, active_store, operation, scoped, values
 from app.supply.defaults import resolve_warehouse
+from app.supply.fifo import calculate as calculate_fifo
 from app.supply.models import InventoryBalance, InventoryMovement, Shipment, ShipmentLine, Warehouse
 from app.supply.schemas import AdjustmentInput, WarehouseInput
 from app.supply.stock import StockChange, change_stock
@@ -111,10 +112,50 @@ def movements(db: DB, page: Page, user: Reader, store_id: str | None = None, war
     statement = warehouse_scope(statement, InventoryMovement.warehouse_id, warehouse_kind)
     if kind:
         statement = statement.where(InventoryMovement.kind == kind)
+    total = db.scalar(select(func.count()).select_from(statement.subquery()))
+    items = list(db.scalars(statement.order_by(InventoryMovement.created_at.desc(), InventoryMovement.id)
+                           .limit(page.limit).offset(page.offset)))
+    scopes = {(item.store_id, item.product_id, item.product.internal_sku) for item in items if item.warehouse.kind == 'fba'}
+    fifo = calculate_fifo(db, scopes)
+    lots = {lot['movement_id']: lot for result in fifo.values() for lot in result['lots']}
     def output(item):
         return {**values(item, 'id store_id warehouse_id product_id kind quantity reserved_delta balance_after reserved_after reference_id reference_number reason actor_name created_at'),
-                'store_name': item.store.name, 'warehouse_name': item.warehouse.name, 'internal_sku': item.product.internal_sku, 'product_name': item.product.name}
-    return paginated(db, statement.order_by(InventoryMovement.created_at.desc(), InventoryMovement.id), page, output)
+                'store_name': item.store.name, 'warehouse_name': item.warehouse.name, 'internal_sku': item.product.internal_sku,
+                'product_name': item.product.name, 'fifo': lots.get(item.id)}
+    return {'total': total, 'items': [output(item) for item in items]}
+
+
+@router.get('/inventory/fifo')
+def fifo_summary(db: DB, page: Page, user: Reader, store_id: str | None = None, product_id: str | None = None):
+    groups = scoped(select(InventoryBalance.store_id, InventoryBalance.product_id)
+        .where(InventoryBalance.warehouse_id.in_(select(Warehouse.id).where(Warehouse.kind == 'fba'))),
+        user, InventoryBalance.store_id, store_id)
+    if product_id:
+        groups = groups.where(InventoryBalance.product_id == product_id)
+    groups = groups.distinct().subquery()
+    total = db.scalar(select(func.count()).select_from(groups))
+    records = db.execute(select(groups.c.store_id, groups.c.product_id, Store.name, Product.internal_sku, Product.name)
+        .join(Store, Store.id == groups.c.store_id).join(Product, Product.id == groups.c.product_id)
+        .order_by(Product.internal_sku, groups.c.store_id).limit(page.limit).offset(page.offset)).all()
+    results = calculate_fifo(db, [(s, p, sku) for s, p, _, sku, _ in records])
+    return {'total': total, 'items': [{'store_id': store, 'product_id': product, 'store_name': store_name,
+        'internal_sku': sku, 'product_name': name,
+        **{key: value for key, value in results[(store, product)].items() if key not in ('lots', 'daily')}}
+        for store, product, store_name, sku, name in records]}
+
+
+@router.get('/inventory/fifo/daily')
+def fifo_daily(db: DB, page: Page, user: Reader, store_id: str, product_id: str):
+    # Authorize before loading order quantities or lot references.
+    query = scoped(select(InventoryBalance).where(InventoryBalance.product_id == product_id,
+        InventoryBalance.warehouse_id.in_(select(Warehouse.id).where(Warehouse.kind == 'fba'))),
+        user, InventoryBalance.store_id, store_id)
+    balance = db.scalar(query.limit(1))
+    if balance is None:
+        fail(404, 'not_found', '库存 SKU 不存在或无权访问')
+    result = calculate_fifo(db, [(store_id, product_id, balance.product.internal_sku)])[(store_id, product_id)]
+    days = list(reversed(result['daily']))
+    return {'total': len(days), 'items': days[page.offset:page.offset + page.limit]}
 
 
 @router.post('/inventory/adjustments', status_code=201)

@@ -22,5 +22,7 @@ export interface Shipment {
   lines: ShipmentLine[]; events?: { id: string; stage: string; notes: string; actor_name: string; created_at: string }[];
 }
 export interface InventoryBalance { id: string; store_id: string; store_name: string; warehouse_id: string; warehouse_name: string; warehouse_kind: string; product_id: string; internal_sku: string; product_name: string; quantity: number; reserved: number; available: number; updated_at: string }
-export interface Movement { id: string; store_name: string; warehouse_name: string; product_name: string; internal_sku: string; kind: string; quantity: number; reserved_delta: number; balance_after: number; reserved_after: number; reference_id: string; reference_number: string; reason: string; actor_name: string; created_at: string }
+export interface Movement { fifo: FifoLot | null; id: string; store_name: string; warehouse_name: string; product_name: string; internal_sku: string; kind: string; quantity: number; reserved_delta: number; balance_after: number; reserved_after: number; reference_id: string; reference_number: string; reason: string; actor_name: string; created_at: string }
 export interface StockSummary { quantity: number; reserved: number; available: number; in_transit: number }
+
+export interface FifoLot { movement_id: string; reference_number: string; warehouse_id: string; created_at: string; quantity: number; remaining_quantity: number; sales_consumed: number; other_consumed: number; is_current: boolean }

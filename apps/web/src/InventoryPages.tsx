@@ -46,15 +46,16 @@ function MovementList({ selectedStore }: { selectedStore: string }) {
   const resource = usePagedList<Movement>(queryPath('/inventory/movements', { store_id: storeParam(selectedStore), product_id: productId, kind, warehouse_kind: 'fba' }));
   return <><ErrorNotice error={resource.error} retry={resource.reload} /><Card className="section-card" title="已过账流水" extra={<Button icon={<ReloadOutlined />} onClick={resource.reload}>刷新</Button>}>
     <div className="catalog-filter-bar"><InventorySkuFilter selectedStore={selectedStore} value={productId} onChange={setProductId} /><Select allowClear placeholder="全部变动类型" style={{ width: 200 }} value={kind} onChange={setKind} options={options(movementKinds)} /><span className="cell-secondary">已过账流水保留历史，差异通过新的调整记录处理。</span></div>
-    <Table<Movement> rowKey="id" loading={resource.loading} dataSource={resource.data?.items ?? []} pagination={resource.pagination} scroll={{ x: 1320 }} columns={[
+    <Table<Movement> rowKey="id" loading={resource.loading} dataSource={resource.data?.items ?? []} pagination={resource.pagination} scroll={{ x: 1480 }} columns={[
       { title: '时间 / 操作人', width: 180, render: (_, item) => <>{dateTime(item.created_at)}<small className="cell-secondary">{item.actor_name}</small></> },
       { title: '商品 / SKU', width: 230, render: (_, item) => <><strong>{item.internal_sku}</strong><small className="cell-secondary">{item.product_name}</small></> },
       { title: '店铺', dataIndex: 'store_name', width: 160 },
       { title: '类型', dataIndex: 'kind', width: 130, render: value => <Tag>{movementKinds[value]}</Tag> },
       { title: '实物变动', dataIndex: 'quantity', width: 100, render: value => value > 0 ? `+${value}` : value },
+      { title: '消耗状态', width: 130, render: (_, item) => item.fifo ? <Tag color={item.fifo.is_current ? 'processing' : item.fifo.remaining_quantity ? 'default' : 'success'}>{item.fifo.is_current ? '当前消耗' : item.fifo.remaining_quantity ? '待消耗' : '已耗尽'}</Tag> : '—' },
       { title: '占用变动', dataIndex: 'reserved_delta', width: 100, render: value => value > 0 ? `+${value}` : value },
       { title: '变动后实物 / 占用', width: 140, render: (_, item) => `${item.balance_after} / ${item.reserved_after}` },
-      { title: '来源 / 原因', width: 280, render: (_, item) => <>{item.reference_number || '手工登记'}<small className="cell-secondary catalog-prewrap">{item.reason}</small></> },
+      { title: '来源 / 原因', width: 280, render: (_, item) => <>{item.reference_number || '手工登记'}<small className="cell-secondary" title={item.id}>流水 {item.id.slice(0, 8)}</small><small className="cell-secondary catalog-prewrap">{item.reason}</small></> },
     ]} locale={{ emptyText: <EmptyState text={productId || kind ? '当前筛选条件下暂无库存流水，请更换 SKU 或变动类型。' : '暂无库存变动。入库、发货、占用及调整会自动产生流水。'} /> }} />
   </Card></>;
 }
