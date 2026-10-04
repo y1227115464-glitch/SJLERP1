@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 
-from fastapi import Query
+from fastapi import HTTPException, Query
 from sqlalchemy import Numeric, cast, func, literal, select, union
 
 from app.core.api import DB, Page, require_store
@@ -59,12 +59,12 @@ def queries(user, store_id, start_date, end_date, order_scope):
 
 
 def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku='', order_scope='shipped',
-              cad_per_usd=Decimal('1.36'), mxn_per_usd=Decimal('17.66'), granularity=None):
+              cad_per_usd=Decimal('1.36'), mxn_per_usd=Decimal('17.66'), granularity=None, period_anchor=None, period_days=None):
     sales_query, ad_query = queries(user, store_id, start_date, end_date, order_scope)
     def bucket(day):
         if not granularity:
             return None
-        return period_start(date.fromisoformat(day) if isinstance(day, str) else day, granularity)
+        return period_start(date.fromisoformat(day) if isinstance(day, str) else day, granularity, period_anchor, period_days)
     divisors = {'USD': Decimal(1), 'CAD': cad_per_usd, 'MXN': mxn_per_usd}
     # Use explicit report assumptions, not a live or implicit exchange rate.
     excluded_sales = db.scalar(select(func.count()).select_from(sales_query.where(
@@ -208,12 +208,12 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         # buckets, including days with no orders but with (or without) ad reports.
         observed = [row['_period'] for row in rows.values()]
         first = start_date or (min(observed) if observed else None)
-        last = end_date or (period_end(max(observed), granularity) if observed else None)
+        last = end_date or (period_end(max(observed), granularity, period_anchor, period_days) if observed else None)
         if first and last:
-            current = period_start(first, granularity)
+            current = period_start(first, granularity, period_anchor, period_days)
             while current <= last:
                 row_for(store_id, sku, current)
-                finish = period_end(current, granularity)
+                finish = period_end(current, granularity, period_anchor, period_days)
                 if finish == date.max:
                     break
                 current = finish + timedelta(days=1)
@@ -223,7 +223,7 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         row['key'] = row['store_id'] + ':' + row['sku']
         if granularity:
             row['period_start'] = max(row['_period'], start_date) if start_date else row['_period']
-            finish = period_end(row['_period'], granularity)
+            finish = period_end(row['_period'], granularity, period_anchor, period_days)
             row['period_end'] = min(finish, end_date) if end_date else finish
             row['key'] += ':' + row['_period'].isoformat()
         if (row['store_id'], row['_period']) not in ad_stores:
@@ -249,12 +249,15 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
 @router.get('/periods')
 def periods(db: DB, user: Reader, page: Page, store_id: str, sku: str = Query(min_length=1, max_length=120),
             start_date: date | None = None, end_date: date | None = None, granularity: Granularity = 'day',
+            period_anchor: date | None = None, period_days: int | None = Query(None, ge=1, le=3652059),
             order_scope: Literal['shipped', 'non_cancelled'] = 'shipped',
             cad_per_usd: Decimal = Query(Decimal('1.36'), ge=Decimal('.000001'), le=100000),
             mxn_per_usd: Decimal = Query(Decimal('17.66'), ge=Decimal('.000001'), le=100000)):
     require_store(db, user, store_id)
+    if granularity == 'range' and (period_anchor is None or period_days is None):
+        raise HTTPException(422, '按查询时间段汇总需要周期起点和天数')
     values, _, excluded = calculate(db, user, store_id, start_date, end_date, sku=sku, order_scope=order_scope,
-        cad_per_usd=cad_per_usd, mxn_per_usd=mxn_per_usd, granularity=granularity)
+        cad_per_usd=cad_per_usd, mxn_per_usd=mxn_per_usd, granularity=granularity, period_anchor=period_anchor, period_days=period_days)
     values.sort(key=lambda row: row['period_start'])
     return {'items': [output(row) for row in values[page.offset:page.offset + page.limit]],
         'total': len(values), 'granularity': granularity, 'currency': 'USD', 'excluded': excluded}

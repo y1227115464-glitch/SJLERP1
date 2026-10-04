@@ -113,3 +113,21 @@ def test_leap_month_and_week_boundaries():
     assert period_start(date(2024, 2, 29), 'month') == date(2024, 2, 1)
     assert period_end(date(2024, 2, 1), 'month') == date(2024, 2, 29)
     assert period_start(date(2026, 1, 1), 'week') == date(2025, 12, 29)
+
+
+def test_query_range_cycles_aggregate_and_paginate(system):
+    h = imported(system, [sale(**{'amazon-order-id': str(i), 'purchase-date': f'{day}T07:00:00Z', 'last-updated-date': f'{day}T08:00:00Z'})
+        for i, day in enumerate(['2025-09-28', '2025-09-30', '2025-10-01', '2025-10-03', '2025-10-04'])])
+    params = dict(start_date='2025-09-28', end_date='2025-10-06', granularity='range',
+        period_anchor='2025-10-01', period_days=3)
+    rows = periods(system, h, **params)['items']
+    assert [(r['period_start'], r['period_end']) for r in rows] == [
+        ('2025-09-28', '2025-09-30'), ('2025-10-01', '2025-10-03'), ('2025-10-04', '2025-10-06')]
+    assert [r['quantity'] for r in rows] == [4, 4, 2]
+    page = periods(system, h, **params, limit=1, offset=1)
+    assert page['total'] == 3 and page['items'] == [rows[1]]
+    for day, expected in [(date(2025, 9, 30), date(2025, 9, 28)), (date(2025, 10, 4), date(2025, 10, 4))]:
+        assert period_start(day, 'range', date(2025, 10, 1), 3) == expected
+    response = system['client'].get('/api/v1/sales-analysis/periods', headers=h,
+        params={'store_id': system['ids']['a'], 'sku': 'SKU-A', 'granularity': 'range'})
+    assert response.status_code == 422

@@ -25,14 +25,16 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
   row: SalesAnalysisRow; dates: ReportDateRange; orderScope: string; cad: number; mxn: number;
   columns: ColumnsType<SalesAnalysisRow>; onCosts: () => void;
 }) {
-  const [granularity, setGranularity] = useState<SalesGranularity>(() => defaultSalesGranularity(dates.start, dates.end));
+  const [granularity, setGranularity] = useState<SalesGranularity>(() => dates.start && dates.end ? 'range' : defaultSalesGranularity(dates.start, dates.end));
   const [extension, setExtension] = useState({ before: granularity === 'year' ? 0 : 1, after: granularity === 'year' ? 0 : 1 });
-  const unit = { day: '天', week: '周', month: '月', year: '年' }[granularity];
-  const start = dates.start ? dayjs(dates.start).subtract(extension.before, granularity).format('YYYY-MM-DD') : '';
-  const end = dates.end ? dayjs(dates.end).add(extension.after, granularity).format('YYYY-MM-DD') : '';
+  const periodDays = dates.start && dates.end ? dayjs(dates.end).diff(dayjs(dates.start), 'day') + 1 : 0;
+  const unit = { range: '个周期', day: '天', week: '周', month: '月', year: '年' }[granularity];
+  const start = dates.start ? dayjs(dates.start).subtract(extension.before * (granularity === 'range' ? periodDays : 1), granularity === 'range' ? 'day' : granularity).format('YYYY-MM-DD') : '';
+  const end = dates.end ? dayjs(dates.end).add(extension.after * (granularity === 'range' ? periodDays : 1), granularity === 'range' ? 'day' : granularity).format('YYYY-MM-DD') : '';
   const path = queryPath('/sales-analysis/periods', { store_id: row.store_id, sku: row.sku,
     start_date: start, end_date: end, order_scope: orderScope,
-    cad_per_usd: String(cad), mxn_per_usd: String(mxn), granularity });
+    cad_per_usd: String(cad), mxn_per_usd: String(mxn), granularity,
+    period_anchor: granularity === 'range' ? dates.start : undefined, period_days: granularity === 'range' ? String(periodDays) : undefined });
   const [cursor, setCursor] = useState({ path, page: 1 });
   const page = cursor.path === path ? cursor.page : 1;
   const resource = useResource<SalesAnalysisPeriods>(`${path}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`);
@@ -46,7 +48,7 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
   return <div className="analysis-periods">
     <div className="analysis-period-toolbar"><strong>{row.store_name} · {row.sku}</strong>
       <Segmented<SalesGranularity> aria-label="SKU 明细聚合方式" value={granularity} onChange={value => { setGranularity(value); setExtension({ before: value === 'year' ? 0 : 1, after: value === 'year' ? 0 : 1 }); }} options={[
-        { value: 'day', label: '按天' }, { value: 'week', label: '按周' }, { value: 'month', label: '按月' }, { value: 'year', label: '按年' },
+        { value: 'range', label: '按查询时间段', disabled: !periodDays }, { value: 'day', label: '按天' }, { value: 'week', label: '按周' }, { value: 'month', label: '按月' }, { value: 'year', label: '按年' },
       ]} />
     </div>
     <div className="analysis-period-range">
@@ -54,6 +56,7 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
         onChange={value => setExtension(previous => ({ ...previous, before: value ?? 0 }))} /> {unit}</span>
       <span>向后添加 <InputNumber aria-label={`向后添加${unit}`} min={0} max={100} precision={0} value={extension.after} disabled={!dates.end}
         onChange={value => setExtension(previous => ({ ...previous, after: value ?? 0 }))} /> {unit}</span>
+      {granularity === 'range' && <span>每个周期 {periodDays} 天（含起止日）</span>}
       <span>查看区间：{start || '最早日期'} ～ {end || '最新日期'}</span>
       <span className="analysis-period-legend">当前分析时段：{dates.start || '最早日期'} ～ {dates.end || '最新日期'}</span>
     </div>

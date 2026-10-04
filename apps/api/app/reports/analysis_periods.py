@@ -2,10 +2,12 @@
 from datetime import date, timedelta
 from typing import Literal
 
-Granularity = Literal['day', 'week', 'month', 'year']
+Granularity = Literal['day', 'week', 'month', 'year', 'range']
 
 
-def period_start(day: date, granularity: Granularity) -> date:
+def period_start(day: date, granularity: Granularity, anchor: date | None = None, days: int | None = None) -> date:
+    if granularity == 'range':
+        return anchor + timedelta(days=((day - anchor).days // days) * days)
     if granularity == 'week':
         return day - timedelta(days=day.weekday())
     if granularity == 'month':
@@ -15,7 +17,9 @@ def period_start(day: date, granularity: Granularity) -> date:
     return day
 
 
-def period_end(day: date, granularity: Granularity) -> date:
+def period_end(day: date, granularity: Granularity, anchor: date | None = None, days: int | None = None) -> date:
+    if granularity == 'range':
+        return day + timedelta(days=min(days - 1, (date.max - day).days))
     if granularity == 'year':
         return day.replace(month=12, day=31)
     if granularity == 'month':

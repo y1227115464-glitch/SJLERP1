@@ -1,4 +1,4 @@
-export type SalesGranularity = 'day' | 'week' | 'month' | 'year';
+export type SalesGranularity = 'day' | 'week' | 'month' | 'year' | 'range';
 
 export function defaultSalesGranularity(start: string, end: string): SalesGranularity {
   if (!start || !end) return 'year';
