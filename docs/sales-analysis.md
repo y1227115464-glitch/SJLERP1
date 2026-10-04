@@ -81,7 +81,9 @@ SKU 行末的「删除」清除当前范围内可管理的全部双档物流费�
 
 ## API 与验证
 
-- `GET /api/v1/sales-analysis`：分页 `items`、全筛选 `totals`、排除的币种行数；支持 store_id、start_date、end_date、sku、q、order_scope、sort_by、descending。
+- `GET /api/v1/sales-analysis`：分页 `items`、全筛选 `totals`、排除的币种行数；支持 store_id、start_date、end_date、sku、q、order_scope、sort_by、descending。可重复传入 excluded_keys（行 key，店铺 ID + 冒号 + SKU），仅从合计中排除指定行，列表、排序与分页总数不变；利润率按纳入合计的利润与销售额重算。
+- 页面请求传 exclude_incomplete=true，使全部分页中有 issues 的 SKU 默认不计入合计；included_keys 可重复指定手动勾选的待补充行，excluded_keys 仍优先排除手动取消的行。省略 exclude_incomplete 时保持原接口的全筛选合计口径。
+- SKU 列内的「计入合计」复选框对资料完整行默认勾选，资料待补充行默认不勾选，可手动调整。合计行及上方统计覆盖所有分页内勾选的 SKU；翻页、排序保留勾选状态，切换店铺、日期、搜索、订单范围或汇率后恢复默认勾选。SKU 列宽为 180px，表头、SKU、销量及展开按钮在滚动时固定。
 - `GET /api/v1/sales-analysis/periods`：要求 store_id、sku，支持日期、订单范围、汇率以及 granularity=day/week/month/year；返回按期间升序的分页明细、period_start 和 period_end，权限与主分析一致。
 - `GET /api/v1/sales-analysis/suggestions`：销售与广告 SKU 并集候选，遵守店铺权限与期间筛选。
 - `GET /api/v1/sales-analysis/costs`：可见费用版本列表。

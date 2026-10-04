@@ -75,6 +75,69 @@ def test_missing_cost_or_ad_data_stays_unknown_and_zero_cost_is_valid(system):
     assert analysis(c, h, sku='SKU-A')['items'][0]['ad_spend'] == '0.00'
 
 
+def test_unchecked_rows_only_change_totals_across_pages_and_stores(system):
+    c = system['client']
+    h = imported(system, [sale()])
+    imported(system, [sale(**{'item-price': '40'})], h=h, store=system['ids']['b'])
+    imported(system, [daily(日期='2025-09-26', 花费=3), daily(日期='2025-09-26', 广告SKU='AD-ONLY', 花费=4)], 'ads', h)
+    imported(system, [daily(日期='2025-09-26', 花费=5)], 'ads', h, system['ids']['b'])
+    cost(c, h)
+    original = analysis(c, h, limit=1, sort_by='sku', descending=False)
+    # Exclude an off-page row. The same SKU in another store remains included.
+    key = system['ids']['a'] + ':SKU-A'
+    selected = analysis(c, h, limit=1, sort_by='sku', descending=False, excluded_keys=[key, 'unknown:SKU-A'])
+    assert selected['items'] == original['items'] and selected['total'] == original['total'] == 3
+    assert selected['totals']['quantity'] == 2 and selected['totals']['sales'] == '40.00'
+    assert selected['totals']['product_cost'] == '2.70' and selected['totals']['fba_fee'] == '5.00'
+    assert selected['totals']['commission'] == '6.00' and selected['totals']['ad_spend'] == '9.00'
+    assert selected['totals']['sales_profit'] == '26.30' and selected['totals']['actual_profit'] == '17.30'
+    assert selected['totals']['sales_profit_rate'] == '0.657500'
+    assert selected['totals']['actual_profit_rate'] == '0.432500'
+    other_page = analysis(c, h, limit=1, offset=1, sort_by='sales', excluded_keys=[key])
+    assert other_page['totals'] == selected['totals']
+    assert analysis(c, h)['totals'] == original['totals']
+
+
+def test_unchecking_incomplete_and_all_rows_recalculates_known_and_zero_totals(system):
+    c = system['client']
+    h = imported(system, [sale(), sale(sku='MISSING', **{'item-price': ''})])
+    imported(system, [daily(日期='2025-09-26', 花费=3)], 'ads', h)
+    cost(c, h)
+    original = analysis(c, h)
+    assert original['totals']['actual_profit'] is None and original['totals']['incomplete_rows'] == 1
+    selected = analysis(c, h, excluded_keys=[system['ids']['a'] + ':MISSING'])
+    assert selected['total'] == 2 and selected['totals']['incomplete_rows'] == 0
+    assert selected['totals'] == analysis(c, h, sku='SKU-A')['totals']
+    empty = analysis(c, h, excluded_keys=[row['key'] for row in original['items']])
+    assert empty['items'] == original['items'] and empty['total'] == 2
+    assert empty['totals']['quantity'] == 0 and empty['totals']['incomplete_rows'] == 0
+    for field in ['sales', 'product_cost', 'fba_fee', 'commission', 'sales_profit', 'ad_spend', 'actual_profit']:
+        assert empty['totals'][field] == '0.00'
+    assert empty['totals']['sales_profit_rate'] == empty['totals']['actual_profit_rate'] == '0.000000'
+
+
+def test_incomplete_rows_default_unchecked_across_pages_with_manual_override(system):
+    c = system['client']
+    h = imported(system, [sale(), sale(sku='ZZ-MISSING')])
+    imported(system, [daily(日期='2025-09-26', 花费=3)], 'ads', h)
+    cost(c, h)
+    original = analysis(c, h, limit=1, sort_by='sku', descending=False)
+    assert original['totals']['actual_profit'] is None
+    selected = analysis(c, h, limit=1, sort_by='sku', descending=False, exclude_incomplete=True)
+    assert selected['items'] == original['items'] and selected['total'] == 2
+    assert selected['totals'] == analysis(c, h, sku='SKU-A')['totals']
+    missing_key = system['ids']['a'] + ':ZZ-MISSING'
+    manual = analysis(c, h, exclude_incomplete=True, included_keys=[missing_key])
+    assert manual['totals'] == original['totals']
+    cancelled = analysis(c, h, exclude_incomplete=True, included_keys=[missing_key], excluded_keys=[missing_key])
+    assert cancelled['totals'] == selected['totals']
+    empty = analysis(c, h, sku='ZZ-MISSING', exclude_incomplete=True)
+    assert empty['total'] == 1 and empty['totals']['quantity'] == 0 and empty['totals']['actual_profit'] == '0.00'
+    # Filling in the missing information restores default inclusion on refresh.
+    cost(c, h, sku='ZZ-MISSING')
+    assert analysis(c, h, exclude_incomplete=True)['totals'] == analysis(c, h)['totals']
+
+
 def test_dated_rates_store_override_and_missing_values_do_not_fall_back(system):
     c = system['client']
     h = imported(system, [sale(), sale(**{'amazon-order-id': 'SECOND', 'purchase-date': '2025-09-27T00:00:00Z', 'last-updated-date': '2025-09-28T00:00:00Z'})])

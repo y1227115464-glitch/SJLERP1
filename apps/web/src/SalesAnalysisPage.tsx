@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Alert, Button, Card, Col, InputNumber, Row, Segmented, Select, Statistic, Table, Tabs, Tag, Tooltip } from 'antd';
+import { useEffect, useState } from 'react';
+import { Alert, Button, Card, Checkbox, Col, InputNumber, Row, Segmented, Select, Statistic, Table, Tabs, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ImportOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { ErrorNotice, PAGE_SIZE, PageHeading, useResource } from './common';
@@ -81,20 +81,36 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
   const [mxn, setMxn] = useState(17.66);
   const [costs, setCosts] = useState<{ sku?: string; tab?: 'costs' | 'fba' } | null>(null);
   const context = { store_id: selectedStore === 'all' ? undefined : selectedStore, start_date: dates.start, end_date: dates.end, order_scope: orderScope };
+  const selectionScope = queryPath('/sales-analysis', { ...context, ...search, cad_per_usd: String(cad), mxn_per_usd: String(mxn) });
+  const [selection, setSelection] = useState<{ scope: string; overrides: Map<string, boolean> }>(() => ({ scope: selectionScope, overrides: new Map() }));
+  useEffect(() => { setSelection({ scope: selectionScope, overrides: new Map() }); }, [selectionScope]);
+  const overrides = selection.scope === selectionScope ? selection.overrides : new Map<string, boolean>();
+  const toggleIncluded = (key: string, included: boolean) => setSelection(previous => {
+    const overrides = new Map(previous.scope === selectionScope ? previous.overrides : []);
+    overrides.set(key, included);
+    return { scope: selectionScope, overrides };
+  });
   const path = queryPath('/sales-analysis', { ...context, ...search, cad_per_usd: String(cad), mxn_per_usd: String(mxn), sort_by: sort, descending: sort === 'sku' ? 'false' : 'true' });
   const [cursor, setCursor] = useState({ path, page: 1 });
   const page = cursor.path === path ? cursor.page : 1;
-  const resource = useResource<SalesAnalysis>(`${path}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`);
+  const resource = useResource<SalesAnalysis>(`${path}&exclude_incomplete=true&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`);
+  const exclusions = new URLSearchParams();
+  [...overrides].sort(([a], [b]) => a.localeCompare(b)).forEach(([key, included]) => exclusions.append(included ? 'included_keys' : 'excluded_keys', key));
+  const selectedTotals = useResource<SalesAnalysis>(overrides.size ? `${selectionScope}&exclude_incomplete=true&limit=1&${exclusions}` : null);
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const reload = () => { resource.reload(); setRefreshVersion(value => value + 1); };
+  const reload = () => { resource.reload(); selectedTotals.reload(); setRefreshVersion(value => value + 1); };
   const data = resource.data;
-  const totals = data?.totals;
+  const totals = overrides.size ? selectedTotals.data?.totals : data?.totals;
   const costCell = (value: string | null, row: SalesAnalysisRow) => value == null
     ? <Button type="link" size="small" onClick={() => setCosts({ sku: row.sku })}>待补充</Button> : money(value);
   const columns: ColumnsType<SalesAnalysisRow> = [
-    { title: '店铺 SKU', dataIndex: 'sku', fixed: 'left', width: 220, render: (value, row) => <><strong>{value}</strong>
-      {row.issues.length > 0 && <Tooltip title={row.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}</> },
-    { title: '销量', dataIndex: 'quantity', width: 80, align: 'right' },
+    { title: '店铺 SKU', dataIndex: 'sku', fixed: 'left', width: 180, render: (value, row) => <div className="analysis-sku-cell">
+      <Tooltip title="勾选后计入合计"><Checkbox aria-label={`${row.store_name} ${row.sku} 计入合计`} checked={overrides.get(row.key) ?? row.issues.length === 0}
+        onChange={event => toggleIncluded(row.key, event.target.checked)} /></Tooltip>
+      <div><strong>{value}</strong>
+        {row.issues.length > 0 && <Tooltip title={row.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}</div>
+    </div> },
+    { title: '销量', dataIndex: 'quantity', fixed: 'left', width: 80, align: 'right' },
     { title: <span>产品成本、头程<br />及入库配置费 USD</span>, dataIndex: 'product_cost', width: 165, align: 'right', render: costCell },
     { title: <span>FBA 派送费<br />USD</span>, dataIndex: 'fba_fee', width: 130, align: 'right', render: (value, row) => value == null
       ? <Button type="link" size="small" onClick={() => setCosts({ sku: row.sku, tab: 'fba' })}>待补充</Button> : money(value) },
@@ -120,6 +136,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
     </div><p className="table-subtext">订单按 PDT（全年固定 UTC−7）下单日期筛选，广告按日报日期筛选。CMBQ 尺寸别名沿用周利润规则归并，其他 SKU 精确关联。</p></Card>
     <Alert showIcon type="info" title="利润分析口径" description="销售额 = 商品金额 − 商品优惠；成本与 FBA 费用按销量计算，佣金默认按销售额的 15% 预估。实际广告费取已导入日报，不叠加广告归因销售额。此处利润仍基于预估费用，不是结算净利润；请确认所选期间的销售与广告报告已完整导入。" />
     <ErrorNotice error={resource.error} retry={resource.reload} />
+    <ErrorNotice error={selectedTotals.error} retry={selectedTotals.reload} />
     {!!totals?.incomplete_rows && <Alert className="analysis-alert" showIcon type="warning" title={`${totals.incomplete_rows} 个店铺 SKU 的资料待补充`} description="缺失费用、广告来源或品牌广告分摊的利润留空。请在费用设置或广告数据中补齐。" />}
     {!!data?.excluded.unallocated_brand_campaigns?.length && <Alert className="analysis-alert" showIcon type="warning" title="品牌广告尚未分摊，实际广告费与利润待确认" description={<><p>请到「广告数据 → 品牌广告分摊」维护商品与比例。以下花费属于所选期间，尚未归属到 SKU：</p>{data.excluded.unallocated_brand_campaigns.map(item => <div key={`${item.store_id}:${item.campaign}:${item.currency}`}>{stores.find(store => store.id === item.store_id)?.name || item.store_id} · {item.campaign} · {item.currency} {item.spend}</div>)}</>} />}
     {!!data && (data.excluded.unsupported_sales_rows > 0 || data.excluded.unsupported_ad_rows > 0) && <Alert className="analysis-alert" showIcon type="warning" title="部分币种尚未参与折算" description={`所选店铺和期间内有 ${data.excluded.unsupported_sales_rows} 条缺少币种或不支持币种的订单、${data.excluded.unsupported_ad_rows} 条不支持币种的广告未计入；当前支持 USD、CAD、MXN。`} />}
@@ -135,18 +152,18 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' },
     ]} />}>
       <Table<SalesAnalysisRow> rowKey="key" className="sales-analysis-table" loading={resource.loading} dataSource={data?.items ?? []} columns={columns}
-        scroll={{ x: 1655, y: 'min(60vh, 640px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
+        scroll={{ x: 1663, y: 'min(60vh, 640px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
           showTotal: total => `共 ${total} 个店铺 SKU`, onChange: page => setCursor({ path, page }) }}
-        expandable={{ expandedRowRender: row => <SkuPeriods key={`${row.key}:${dates.start}:${dates.end}:${refreshVersion}`}
+        expandable={{ fixed: 'left', columnWidth: 48, expandedRowRender: row => <SkuPeriods key={`${row.key}:${dates.start}:${dates.end}:${refreshVersion}`}
           row={row} dates={dates} orderScope={orderScope} cad={cad} mxn={mxn} columns={columns}
           onCosts={() => setCosts({ sku: row.sku })} /> }}
         summary={() => totals && <Table.Summary fixed><Table.Summary.Row>
           <Table.Summary.Cell index={0} />
-          <Table.Summary.Cell index={1}><strong>全部筛选结果合计</strong></Table.Summary.Cell>
+          <Table.Summary.Cell index={1}><strong>勾选数据合计</strong></Table.Summary.Cell>
           {(['quantity', 'product_cost', 'fba_fee', 'commission', 'sales_profit', 'sales', 'sales_profit_rate', 'ad_spend', 'actual_profit', 'actual_profit_rate'] as const).map((field, i) =>
             <Table.Summary.Cell index={i + 2} key={field} align="right"><strong>{field === 'quantity' ? totals[field] : field.endsWith('_rate') ? percent(totals[field]) : money(totals[field])}</strong></Table.Summary.Cell>)}
         </Table.Summary.Row></Table.Summary>} />
-      <p className="table-subtext">合计包含全部筛选结果，不只当前页；利润率按合计利润 ÷ 合计销售额重算。销售额为 0 时利润率显示 0.00%。同名 SKU 在不同店铺分别核算。</p>
+      <p className="table-subtext">资料完整的 SKU 默认勾选，资料待补充的默认不勾选，可手动调整。合计及上方统计只计入勾选的 SKU，包含全部分页。翻页和排序保留勾选状态，切换筛选条件后恢复默认勾选。利润率按合计利润 ÷ 合计销售额重算，销售额为 0 时显示 0.00%。同名 SKU 在不同店铺分别核算。</p>
     </Card>
     {costs && <SalesCosts user={user} stores={stores} selectedStore={selectedStore} sku={costs.sku} initialTab={costs.tab} onClose={() => setCosts(null)} onChanged={reload} />}
   </>;

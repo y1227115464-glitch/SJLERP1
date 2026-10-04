@@ -36,6 +36,18 @@ def output(row):
         sorted(value) if isinstance(value, set) else value) for key, value in row.items() if not key.startswith('_')}
 
 
+def summarize(values, pending=False):
+    total = {'sku': '合计', 'quantity': sum(row['quantity'] for row in values)}
+    for field in MONEY_FIELDS:
+        total[field] = sum((row[field] for row in values), ZERO) if all(row[field] is not None for row in values) else None
+    total['sales_profit_rate'] = rate(total['sales_profit'], total['sales'])
+    total['actual_profit_rate'] = rate(total['actual_profit'], total['sales'])
+    total['incomplete_rows'] = sum(bool(row['issues']) for row in values)
+    if pending:
+        total['ad_spend'] = total['actual_profit'] = total['actual_profit_rate'] = None
+    return output(total)
+
+
 def queries(user, store_id, start_date, end_date, order_scope):
     sales = records_query(SalesRecord, user, store_id, start_date, end_date, '')
     ads = records_query(AdRecord, user, store_id, start_date, end_date, '').where(AdRecord.report_date.is_not(None))
@@ -230,15 +242,7 @@ def calculate(db, user, store_id=None, start_date=None, end_date=None, q='', sku
         row['actual_profit_rate'] = rate(row['actual_profit'], row['sales'])
         row['cost_versions'] = len(row['_sources'])
     values = list(rows.values())
-    total = {'sku': '合计', 'quantity': sum(row['quantity'] for row in values)}
-    for field in MONEY_FIELDS:
-        total[field] = sum((row[field] for row in values), ZERO) if all(row[field] is not None for row in values) else None
-    total['sales_profit_rate'] = rate(total['sales_profit'], total['sales'])
-    total['actual_profit_rate'] = rate(total['actual_profit'], total['sales'])
-    total['incomplete_rows'] = sum(bool(row['issues']) for row in values)
-    if pending:
-        total['ad_spend'] = total['actual_profit'] = total['actual_profit_rate'] = None
-    return values, output(total), {'unsupported_sales_rows': excluded_sales, 'unsupported_ad_rows': excluded_ads,
+    return values, summarize(values, bool(pending)), {'unsupported_sales_rows': excluded_sales, 'unsupported_ad_rows': excluded_ads,
         'unallocated_brand_campaigns': pending}
 
 
@@ -282,8 +286,15 @@ def analysis(db: DB, user: Reader, page: Page, store_id: str | None = None,
              cad_per_usd: Decimal = Query(Decimal('1.36'), ge=Decimal('.000001'), le=100000),
              mxn_per_usd: Decimal = Query(Decimal('17.66'), ge=Decimal('.000001'), le=100000),
              sort_by: Literal['sku', 'quantity', 'sales', 'actual_profit', 'actual_profit_rate', 'ad_spend'] = 'sales',
-             descending: bool = True):
+             descending: bool = True, excluded_keys: list[str] = Query(default=[]),
+             exclude_incomplete: bool = False, included_keys: list[str] = Query(default=[])):
     values, totals, excluded = calculate(db, user, store_id, start_date, end_date, q, sku, order_scope, cad_per_usd, mxn_per_usd)
+    if excluded_keys or exclude_incomplete:
+        omitted = set(excluded_keys)
+        explicit = set(included_keys)
+        included = [row for row in values if row['key'] not in omitted
+            and (not exclude_incomplete or not row['issues'] or row['key'] in explicit)]
+        totals = summarize(included, bool(included and excluded['unallocated_brand_campaigns']))
     values.sort(key=lambda row: (row['sku'], row['store_id']))
     # Missing figures always stay at the end, for either sort direction.
     known = [row for row in values if row[sort_by] is not None]
