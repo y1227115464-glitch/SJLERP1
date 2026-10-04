@@ -165,7 +165,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       <Col xs={24} sm={12} xl={6}><Card><Statistic title="扣除推广实际利润" value={money(totals?.actual_profit)} styles={{ content: { color: Number(totals?.actual_profit) < 0 ? '#cf1322' : undefined } }} /></Card></Col>
       <Col xs={24} sm={12} xl={6}><Card><Statistic title="实际利润率" value={percent(totals?.actual_profit_rate)} /></Card></Col>
     </Row>
-    <Card className="section-card" title="SKU 销售与利润" extra={<Select aria-label="销售分析排序" value={sort} onChange={setSort} style={{ width: 180 }} options={[
+    <Card className="section-card" title="SKU 销售与利润" extra={<Select aria-label="销售分析排序" value={sort} onChange={setSort} style={{ width: 200 }} options={[
       { value: 'sku', label: 'SKU 字母升序（A–Z）' },
       { value: 'sales', label: '销售额从高到低' }, { value: 'quantity', label: '销量从高到低' }, { value: 'actual_profit', label: '实际利润从高到低' },
       { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' },
