@@ -60,7 +60,6 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
       <span>查看区间：{start || '最早日期'} ～ {end || '最新日期'}</span>
       <span className="analysis-period-legend">当前分析时段：{dates.start || '最早日期'} ～ {dates.end || '最新日期'}</span>
     </div>
-    <p className="table-subtext">浅蓝背景表示与当前分析时段重叠的期间；扩展区间仅影响本 SKU 明细。周按周一至周日，月和年按自然月、自然年汇总；首尾仅统计查看区间内的日期。各期间利润率按利润 ÷ 销售额重算，未导入广告日报的期间显示待确认。</p>
     <ErrorNotice error={resource.error} retry={resource.reload} />
     <Table<SalesAnalysisPeriod> rowKey="key" size="small" loading={resource.loading} columns={periodColumns}
       rowClassName={item => (!dates.start || item.period_end >= dates.start) && (!dates.end || item.period_start <= dates.end) ? 'analysis-period-current' : ''}
