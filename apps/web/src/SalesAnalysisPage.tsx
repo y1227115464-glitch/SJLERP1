@@ -26,7 +26,7 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
   columns: ColumnsType<SalesAnalysisRow>; onCosts: () => void;
 }) {
   const [granularity, setGranularity] = useState<SalesGranularity>(() => dates.start && dates.end ? 'range' : defaultSalesGranularity(dates.start, dates.end));
-  const [extension, setExtension] = useState({ before: granularity === 'year' ? 0 : 1, after: granularity === 'year' ? 0 : 1 });
+  const [extension, setExtension] = useState({ before: granularity === 'range' ? 3 : granularity === 'year' ? 0 : 1, after: granularity === 'year' ? 0 : 1 });
   const periodDays = dates.start && dates.end ? dayjs(dates.end).diff(dayjs(dates.start), 'day') + 1 : 0;
   const unit = { range: '个周期', day: '天', week: '周', month: '月', year: '年' }[granularity];
   const start = dates.start ? dayjs(dates.start).subtract(extension.before * (granularity === 'range' ? periodDays : 1), granularity === 'range' ? 'day' : granularity).format('YYYY-MM-DD') : '';
@@ -47,7 +47,7 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
   ];
   return <div className="analysis-periods">
     <div className="analysis-period-toolbar"><strong>{row.store_name} · {row.sku}</strong>
-      <Segmented<SalesGranularity> aria-label="SKU 明细聚合方式" value={granularity} onChange={value => { setGranularity(value); setExtension({ before: value === 'year' ? 0 : 1, after: value === 'year' ? 0 : 1 }); }} options={[
+      <Segmented<SalesGranularity> aria-label="SKU 明细聚合方式" value={granularity} onChange={value => { setGranularity(value); setExtension({ before: value === 'range' ? 3 : value === 'year' ? 0 : 1, after: value === 'year' ? 0 : 1 }); }} options={[
         { value: 'range', label: '按查询时间段', disabled: !periodDays }, { value: 'day', label: '按天' }, { value: 'week', label: '按周' }, { value: 'month', label: '按月' }, { value: 'year', label: '按年' },
       ]} />
     </div>
