@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app/apps/api
+COPY apps/api/requirements.lock ./requirements.lock
+COPY infra/nas/requirements-extra.lock ./requirements-extra.lock
+COPY offline/wheels/ /wheels/
+RUN pip install --no-index --find-links=/wheels --no-cache-dir -r requirements.lock -r requirements-extra.lock \
+    && rm -rf /wheels \
+    && useradd --uid 10001 --create-home sjlerp \
+    && mkdir -p /data/storage && chown -R sjlerp:sjlerp /data
+COPY apps/api/ ./
+COPY scripts/nas_master_data.py /app/scripts/nas_master_data.py
+RUN chown -R sjlerp:sjlerp /app && chmod -R u+rX /app
+USER sjlerp
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,2 @@
+# SQLAlchemy's platform-dependent dependency on the NAS (Linux x86_64).
+greenlet==3.5.6
