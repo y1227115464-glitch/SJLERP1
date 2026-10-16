@@ -19,6 +19,7 @@ import { readSalesDates, saveSalesDates } from './filter-preferences';
 
 const money = (value: string | null | undefined) => value == null ? '—' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value));
 const percent = (value: string | null | undefined) => value == null ? '—' : `${(Number(value) * 100).toFixed(2)}%`;
+const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 const colored = (value: string | null, format = money) => <span className={value != null && Number(value) < 0 ? 'analysis-negative' : undefined}>{format(value)}</span>;
 
 function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
@@ -40,7 +41,7 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
   const resource = useResource<SalesAnalysisPeriods>(`${path}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}`);
   const periodColumns: ColumnsType<SalesAnalysisPeriod> = [
     { title: '统计期间', key: 'period', fixed: 'left', width: 220, render: (_, item) => <>
-      <span>{item.period_start === item.period_end ? item.period_start : `${item.period_start} ～ ${item.period_end}`}</span>
+      <span>{item.period_start === item.period_end ? `${item.period_start} ${weekdays[dayjs(item.period_start).day()]}` : `${item.period_start} ～ ${item.period_end}`}</span>
       {!!item.issues.length && <Tooltip title={item.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}
     </> },
     ...columns.slice(1) as ColumnsType<SalesAnalysisPeriod>,
