@@ -135,7 +135,7 @@ export default function App() {
           {page === 'quotes' && <QuotesPage user={user} />}
           {page === 'purchases' && <PurchasesPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
           {page === 'shipments' && <ShipmentsPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
-          {page === 'imports' && <ReportImportsPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}
+          {page === 'imports' && <ReportImportsPage key={selectedStore} user={user} selectedStore={selectedStore} />}
           {page === 'sales' && <SalesAnalysisPage key={'sales-' + selectedStore} user={user} stores={stores} selectedStore={selectedStore} onImport={() => navigate('imports')} />}
           {page === 'ads' && <ReportRecordsPage key={'ads-' + selectedStore} kind="ads" user={user} selectedStore={selectedStore} onImport={() => navigate('imports')} />}
           {page === 'inventory' && <InventoryPage key={selectedStore} user={user} stores={stores} selectedStore={selectedStore} />}

@@ -28,7 +28,7 @@ def delete_import(db, user, identifier, verification_token):
     batch = get_batch(db, actor, identifier)
     # Use the same store lock as confirmation, so the checked records cannot change mid-delete.
     store = db.scalar(select(Store).where(Store.id == batch.store_id).with_for_update().execution_options(populate_existing=True))
-    if not store.is_active:
+    if store and not store.is_active:
         fail(409, 'inactive_store', '店铺已停用，不能删除导入数据')
     db.refresh(batch)
     if batch.deleted_at:

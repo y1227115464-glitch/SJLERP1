@@ -11,7 +11,7 @@ class ReportImport(Base):
     __tablename__ = 'report_imports'
     __table_args__ = (Index('ix_report_import_store_time', 'store_id', 'created_at'),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    store_id: Mapped[str] = mapped_column(ForeignKey('stores.id'), index=True)
+    store_id: Mapped[str | None] = mapped_column(ForeignKey('stores.id'), index=True, nullable=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
     kind: Mapped[str] = mapped_column(String(10))
     filename: Mapped[str] = mapped_column(String(255))
@@ -29,7 +29,7 @@ class ReportImport(Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deletion_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    store: Mapped[Store] = relationship(lazy='joined')
+    store: Mapped[Store | None] = relationship(lazy='joined')
 
 
 class SalesRecord(Base):

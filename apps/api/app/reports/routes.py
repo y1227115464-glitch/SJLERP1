@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import defer
 
-from app.core.api import DB, Page, fail, paginated, require, store_filter
+from app.core.api import DB, Page, fail, owned_scope, paginated, require, store_filter
 from app.reports.comparison import compare
 from app.reports.deletion import delete_import, deletion_preview
 from app.reports.ad_products import with_ad_products
@@ -35,13 +35,16 @@ def scope(query, model, user, store_id=None):
 
 
 @router.post('/report-imports/preview', status_code=201)
-def preview(db: DB, user: Writer, request: Request, file: UploadFile = File(), kind: Literal['sales', 'ads'] = Form(), store_id: str = Form()):
+def preview(db: DB, user: Writer, request: Request, file: UploadFile = File(), kind: Literal['sales', 'ads'] = Form(), store_id: str | None = Form(None)):
     return create_preview(db, user, file, kind, store_id, request.app.state.settings)
 
 
 @router.get('/report-imports')
 def batches(db: DB, user: Reader, page: Page, store_id: str | None = None, kind: Literal['sales', 'ads'] | None = None, show_deleted: bool = False):
-    query = scope(select(ReportImport), ReportImport, user, store_id)
+    query = select(ReportImport).where(owned_scope(user, ReportImport, ReportImport.owner_id))
+    if store_id:
+        query = query.where(or_(ReportImport.store_id == store_id,
+            (ReportImport.store_id.is_(None) & (ReportImport.owner_id == user.id))))
     if not show_deleted:
         query = query.where(ReportImport.deleted_at.is_(None))
     if kind:
@@ -53,7 +56,7 @@ def batches(db: DB, user: Reader, page: Page, store_id: str | None = None, kind:
 @router.get('/report-imports/{identifier}')
 def batch_detail(identifier: str, db: DB, user: Reader, request: Request):
     batch = get_batch(db, user, identifier)
-    return batch_out(batch, compare(db, batch, request.app.state.settings) if batch.result is None and not batch.deleted_at else None) | {'can_confirm': user.id == batch.owner_id and not batch.deleted_at}
+    return batch_out(batch, compare(db, batch, request.app.state.settings) if batch.result is None and not batch.deleted_at else None) | {'can_confirm': bool(batch.store_id) and user.id == batch.owner_id and not batch.deleted_at}
 
 
 @router.get('/report-imports/{identifier}/rows')

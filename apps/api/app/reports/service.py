@@ -11,10 +11,11 @@ from app.models import Store, User, new_id, now
 from app.reports.comparison import chunks, compare
 from app.reports.models import AdRecord, ReportImport, SalesRecord
 from app.reports.parsers import AD_PARSER_VERSION, SALES_PARSER_VERSION, ad_keys, parse_report
+from app.reports.store_detection import detect_store
 
 
 def batch_out(batch, comparison=None):
-    result = {'id': batch.id, 'store_id': batch.store_id, 'store_name': batch.store.name, 'kind': batch.kind,
+    result = {'id': batch.id, 'store_id': batch.store_id, 'store_name': batch.store.name if batch.store else None, 'kind': batch.kind,
               'filename': batch.filename, 'source_total': batch.source_total, 'unique_rows': batch.row_count,
               'duplicate_count': batch.duplicate_count, 'error_count': batch.error_count, 'parser_version': batch.parser_version,
               'created_at': aware(batch.created_at).isoformat(), 'confirmed_at': aware(batch.confirmed_at).isoformat() if batch.confirmed_at else None,
@@ -27,14 +28,17 @@ def batch_out(batch, comparison=None):
 
 def get_batch(db, user, identifier):
     batch = db.get(ReportImport, identifier)
-    if batch is None or not can_access_store(user, batch.store_id):
+    if batch is None or (not can_access_store(user, batch.store_id) if batch.store_id else
+                         user.role != 'admin' and user.id != batch.owner_id):
         fail(404, 'not_found', '导入批次不存在或无权访问')
     return batch
 
 
 def create_preview(db, user, file, kind, store_id, settings):
-    store = require_store(db, user, store_id)
-    if not store.is_active:
+    # Retain explicit store support for existing API clients. The import center
+    # omits it and derives ownership exclusively from the parsed report.
+    store = require_store(db, user, store_id) if store_id else None
+    if store and not store.is_active:
         fail(409, 'inactive_store', '店铺已停用，不能导入')
     try:
         content = file.file.read(settings.max_upload_bytes + 1)
@@ -48,6 +52,9 @@ def create_preview(db, user, file, kind, store_id, settings):
     if extension not in ({'.txt', '.tsv'} if kind == 'sales' else {'.xlsx'}):
         fail(422, 'invalid_extension', '销售请选择 TXT / TSV，广告请选择 XLSX 文件')
     parsed = parse_report(kind, content)
+    if not store_id:
+        store = detect_store(db, user, parsed['rows'])
+        store_id = store.id if store else None
     batch = ReportImport(id=new_id(), owner_id=user.id, store_id=store_id, store=store, kind=kind, filename=filename,
         file_hash=hashlib.sha256(content).hexdigest(), storage_key=new_id(), created_at=now(),
         parser_version=AD_PARSER_VERSION if kind == 'ads' else SALES_PARSER_VERSION,
@@ -105,6 +112,8 @@ def confirm_import(db, user, identifier, verification_token, settings=None):
     batch = get_batch(db, actor, identifier)
     if batch.owner_id != actor.id:
         fail(404, 'not_found', '只有上传者可确认此批次')
+    if not batch.store_id:
+        fail(409, 'store_not_found', '未找到所属店铺，请完善商品品牌或广告活动关联后重新上传')
     store = db.scalar(select(Store).where(Store.id == batch.store_id).with_for_update().execution_options(populate_existing=True))
     if not store.is_active:
         fail(409, 'inactive_store', '店铺已停用，不能确认导入')

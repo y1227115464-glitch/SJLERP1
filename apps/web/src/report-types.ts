@@ -1,6 +1,6 @@
 export type ReportKind = 'sales' | 'ads';
 export type ImportResult = { created: number; updated: number; skipped: number; file_duplicates: number };
-export type ReportBatch = { id: string; store_id: string; store_name: string; kind: ReportKind; filename: string;
+export type ReportBatch = { id: string; store_id: string | null; store_name: string | null; kind: ReportKind; filename: string;
   source_total: number; unique_rows: number; duplicate_count: number; error_count: number; created_at: string;
   confirmed_at: string | null; result: ImportResult | null; deleted_at: string | null; deletion_result: { deleted_rows: number } | null;
   counts?: Record<string, number>; verification_token?: string; can_confirm?: boolean };

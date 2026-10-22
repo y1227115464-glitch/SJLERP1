@@ -28,6 +28,13 @@ def overlapping_keys(intervals):
 
 
 def compare(db, batch, settings=None):
+    if not batch.store_id:
+        return {
+            'rows': [{'row': row['row'], 'action': 'error', 'data': row['data'],
+                      'message': '未找到所属店铺，暂不能导入'} for row in batch.parsed_rows],
+            'counts': {'create': 0, 'update': 0, 'skip': 0, 'conflict': 0, 'error': len(batch.parsed_rows)},
+            'verification_token': fingerprint([batch.id, None, batch.errors]),
+        }
     model = SalesRecord if batch.kind == 'sales' else AdRecord
     existing, intervals = {}, defaultdict(list)
     sales_conflicts, restored = {}, {}
