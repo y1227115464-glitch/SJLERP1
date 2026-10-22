@@ -44,7 +44,6 @@ Web 地址为 `http://127.0.0.1:5173`。首次安装需按启动文档创建管�
 
 ## 文档
 
-- [绿联 NAS 部署与基础资料迁移](docs/nas-deployment.md)
 - [ERP 功能规划与本轮验收范围](docs/erp-product-plan.md)
 - [工作台待办使用说明](docs/task-workbench.md)
 - [灵活作业、提醒规则与工作台待办设计](docs/weekly-operations-workflow.md)
