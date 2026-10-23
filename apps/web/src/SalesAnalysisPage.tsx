@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import dayjs from 'dayjs';
 import { Alert, Button, Card, Checkbox, Col, InputNumber, Row, Segmented, Select, Statistic, Table, Tabs, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { ImportOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
+import { ImportOutlined, QuestionCircleOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { ErrorNotice, PAGE_SIZE, PageHeading, useResource } from './common';
 import { queryPath } from './CatalogShared';
 import { ReportRecordsPage } from './ReportRecords';
@@ -64,7 +64,7 @@ function SkuPeriods({ row, dates, orderScope, cad, mxn, columns, onCosts }: {
     <ErrorNotice error={resource.error} retry={resource.reload} />
     <Table<SalesAnalysisPeriod> rowKey="key" size="small" loading={resource.loading} columns={periodColumns}
       rowClassName={item => (!dates.start || item.period_end >= dates.start) && (!dates.end || item.period_start <= dates.end) ? 'analysis-period-current' : ''}
-      dataSource={resource.data?.items ?? []} scroll={{ x: 1655 }} pagination={{ current: page, pageSize: PAGE_SIZE,
+      dataSource={resource.data?.items ?? []} scroll={{ x: 1470 }} pagination={{ current: page, pageSize: PAGE_SIZE,
         total: resource.data?.total ?? 0, showSizeChanger: false, hideOnSinglePage: true,
         showTotal: total => `共 ${total} 个期间`, onChange: page => setCursor({ path, page }) }} />
     <div className="analysis-row-note"><span>订单来源 {row.sales_rows} 行 · 广告日报 {row.ad_rows} 行 · 使用 {row.cost_versions} 个费用版本</span>
@@ -130,16 +130,16 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
         {row.issues.length > 0 && <Tooltip title={row.issues.join('；')}><Tag color="warning">资料待补充</Tag></Tooltip>}</div>
     </div> },
     { title: '销量', dataIndex: 'quantity', fixed: 'left', width: 80, align: 'right' },
-    { title: <span>产品成本、头程<br />及入库配置费 USD</span>, dataIndex: 'product_cost', width: 165, align: 'right', render: costCell },
-    { title: <span>FBA 派送费<br />USD</span>, dataIndex: 'fba_fee', width: 130, align: 'right', render: (value, row) => value == null
+    { title: <span>产品成本 <Tooltip title="产品成本、头程和入库配置费的总和(USD)"><QuestionCircleOutlined tabIndex={0} aria-label="产品成本说明" style={{ cursor: 'help' }} /></Tooltip></span>, dataIndex: 'product_cost', width: 130, align: 'right', render: costCell },
+    { title: 'FBA 派送费', dataIndex: 'fba_fee', width: 130, align: 'right', render: (value, row) => value == null
       ? <Button type="link" size="small" onClick={() => setCosts({ sku: row.sku, tab: 'fba' })}>待补充</Button> : money(value) },
-    { title: <span>亚马逊佣金<br />USD</span>, dataIndex: 'commission', width: 130, align: 'right', render: money },
-    { title: <span>销售利润<br />USD</span>, dataIndex: 'sales_profit', width: 130, align: 'right', render: value => colored(value) },
-    { title: <span>亚马逊销售额<br />USD</span>, dataIndex: 'sales', width: 145, align: 'right', render: money },
-    { title: <span>销售利润比<br />未扣除推广费用</span>, dataIndex: 'sales_profit_rate', width: 145, align: 'right', render: value => colored(value, percent) },
-    { title: <span>实际广告费<br />USD</span>, dataIndex: 'ad_spend', width: 135, align: 'right', render: value => value == null ? <Tooltip title="请检查广告日报及品牌广告商品分摊">待确认</Tooltip> : money(value) },
-    { title: <span>扣除推广实际利润<br />USD</span>, dataIndex: 'actual_profit', width: 155, align: 'right', render: value => colored(value) },
-    { title: '实际利润率', dataIndex: 'actual_profit_rate', width: 120, align: 'right', render: value => colored(value, percent) },
+    { title: '亚马逊佣金', dataIndex: 'commission', width: 130, align: 'right', render: money },
+    { title: '销售利润', dataIndex: 'sales_profit', width: 130, align: 'right', render: value => colored(value) },
+    { title: '销售额', dataIndex: 'sales', width: 130, align: 'right', render: money },
+    { title: <span>商品利润率 <Tooltip title="未扣除推广费用"><QuestionCircleOutlined tabIndex={0} aria-label="商品利润率说明" style={{ cursor: 'help' }} /></Tooltip></span>, dataIndex: 'sales_profit_rate', width: 130, align: 'right', render: value => colored(value, percent) },
+    { title: '广告费', dataIndex: 'ad_spend', width: 130, align: 'right', render: value => value == null ? <Tooltip title="请检查广告日报及品牌广告商品分摊">待确认</Tooltip> : money(value) },
+    { title: <span>实际利润 <Tooltip title="扣除推广费用后实际利润(USD)"><QuestionCircleOutlined tabIndex={0} aria-label="实际利润说明" style={{ cursor: 'help' }} /></Tooltip></span>, dataIndex: 'actual_profit', width: 130, align: 'right', render: value => colored(value) },
+    { title: '实际利润率', dataIndex: 'actual_profit_rate', width: 130, align: 'right', render: value => colored(value, percent) },
   ];
   return <>
     <Card className="section-card"><div className="report-filters">
@@ -161,8 +161,8 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
     {!!data && (data.excluded.unsupported_sales_rows > 0 || data.excluded.unsupported_ad_rows > 0) && <Alert className="analysis-alert" showIcon type="warning" title="部分币种尚未参与折算" description={`所选店铺和期间内有 ${data.excluded.unsupported_sales_rows} 条缺少币种或不支持币种的订单、${data.excluded.unsupported_ad_rows} 条不支持币种的广告未计入；当前支持 USD、CAD、MXN。`} />}
     <Row gutter={[16, 16]} className="analysis-metrics">
       <Col xs={24} sm={12} xl={6}><Card><Statistic title="销量" value={totals?.quantity ?? '—'} suffix="件" /></Card></Col>
-      <Col xs={24} sm={12} xl={6}><Card><Statistic title="亚马逊销售额" value={money(totals?.sales)} /></Card></Col>
-      <Col xs={24} sm={12} xl={6}><Card><Statistic title="扣除推广实际利润" value={money(totals?.actual_profit)} styles={{ content: { color: Number(totals?.actual_profit) < 0 ? '#cf1322' : undefined } }} /></Card></Col>
+      <Col xs={24} sm={12} xl={6}><Card><Statistic title="销售额" value={money(totals?.sales)} /></Card></Col>
+      <Col xs={24} sm={12} xl={6}><Card><Statistic title="实际利润" value={money(totals?.actual_profit)} styles={{ content: { color: Number(totals?.actual_profit) < 0 ? '#cf1322' : undefined } }} /></Card></Col>
       <Col xs={24} sm={12} xl={6}><Card><Statistic title="实际利润率" value={percent(totals?.actual_profit_rate)} /></Card></Col>
     </Row>
     <Card className="section-card" title="SKU 销售与利润" extra={<Select aria-label="销售分析排序" value={sort} onChange={setSort} style={{ width: 200 }} options={[
@@ -171,7 +171,7 @@ function Analysis({ user, stores, selectedStore }: { user: User; stores: Store[]
       { value: 'actual_profit_rate', label: '实际利润率从高到低' }, { value: 'ad_spend', label: '广告费从高到低' },
     ]} />}>
       <Table<SalesAnalysisRow> rowKey="key" className="sales-analysis-table" loading={resource.loading} dataSource={data?.items ?? []} columns={columns}
-        scroll={{ x: 1683, y: 'min(80vh, 853px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
+        scroll={{ x: 1498, y: 'min(80vh, 853px)' }} pagination={{ current: page, pageSize: PAGE_SIZE, total: data?.total ?? 0, showSizeChanger: false,
           showTotal: total => `共 ${total} 个店铺 SKU`, onChange: page => setCursor({ path, page }) }}
         expandable={{ fixed: 'left', columnWidth: 48, expandedRowRender: row => <SkuPeriods key={`${row.key}:${dates.start}:${dates.end}:${refreshVersion}`}
           row={row} dates={dates} orderScope={orderScope} cad={cad} mxn={mxn} columns={columns}
